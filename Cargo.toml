@@ -1,0 +1,12 @@
+[package]
+name = "handmade"
+version = "0.0.0"
+authors = ["Coeuvre Wong <coeuvre@gmail.com>"]
+
+[[bin]]
+name = "win32_handmade"
+path = "code/win32_handmade.rs"
+
+[dependencies]
+winapi="*"
+user32-sys="*"
