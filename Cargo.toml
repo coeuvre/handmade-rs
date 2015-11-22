@@ -9,4 +9,6 @@ path = "code/win32_handmade.rs"
 
 [dependencies]
 winapi="*"
+gdi32-sys="*"
+kernel32-sys="*"
 user32-sys="*"
