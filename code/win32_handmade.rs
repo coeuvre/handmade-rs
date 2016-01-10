@@ -2,20 +2,29 @@ extern crate winapi;
 extern crate gdi32;
 extern crate kernel32;
 extern crate user32;
+extern crate xinput;
 
 use std::mem;
 
+use winapi::winerror::*;
 use winapi::minwindef::*;
 use winapi::windef::*;
 use winapi::winuser::*;
 use winapi::winnt::*;
 use winapi::wingdi::*;
+use winapi::xinput::*;
 
 use gdi32::*;
-
-use kernel32::{GetConsoleWindow, GetModuleHandleW, VirtualAlloc, VirtualFree};
-
+use kernel32::*;
 use user32::*;
+use xinput::*;
+
+macro_rules! cstr {
+    ($str:expr) => ({
+        use std::ffi::CString;
+        CString::new($str).unwrap().as_ptr()
+    });
+}
 
 macro_rules! wstr {
     ($str:expr) => ({
@@ -29,16 +38,13 @@ macro_rules! wstr {
     });
 }
 
-// TODO(coeuvre): This is a global for now.
-static mut GLOBAL_RUNNING: bool = true;
-
 struct Win32OffscreenBuffer {
+    // NOTE(coeuvre): Pixels are always 32-bits wide, Memory Order BB GG RR XX
     info: BITMAPINFO,
     memory: LPVOID,
     width: i32,
     height: i32,
     pitch: isize,
-    bytes_per_pixel: i32,
 }
 
 struct Win32WindowDiension {
@@ -46,6 +52,8 @@ struct Win32WindowDiension {
     height: i32,
 }
 
+// TODO(coeuvre): This is a global for now.
+static mut GLOBAL_RUNNING: bool = true;
 static mut GLOBAL_BACK_BUFFER: Win32OffscreenBuffer = Win32OffscreenBuffer {
     info: BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
@@ -67,8 +75,54 @@ static mut GLOBAL_BACK_BUFFER: Win32OffscreenBuffer = Win32OffscreenBuffer {
     width: 0,
     height: 0,
     pitch: 0,
-    bytes_per_pixel: 0,
 };
+
+// NOTE(coeuvre): XInputGetState
+type XInputGetState = extern "system" fn(dwUserIndex: DWORD, pState: *mut XINPUT_STATE) -> DWORD;
+extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD {
+    0
+}
+
+// NOTE(coeuvre): XInputSetState
+type XInputSetState = extern "system" fn(dwUserIndex: DWORD, pVibration: *mut XINPUT_VIBRATION)
+                                         -> DWORD;
+extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD {
+    0
+}
+
+static mut XINPUT_GET_STATE: *mut XInputGetState = 0 as *mut XInputGetState;
+static mut XINPUT_SET_STATE: *mut XInputSetState = 0 as *mut XInputSetState;
+
+unsafe fn win32_load_xinput() {
+    // FIXME(coeuvre): For some reasons, even we successfully load XInput
+    // library and set XINPUT_GET_STATE point to function returned by
+    // GetProcAddress, it will still crash. So use the static linked
+    // function for now.
+    let xinput_library = LoadLibraryW(wstr!("xinput1_3.dll"));
+    if xinput_library != 0 as HMODULE {
+        XINPUT_GET_STATE = mem::transmute(GetProcAddress(xinput_library, cstr!("XInputGetState")));
+        if XINPUT_GET_STATE == 0 as *mut XInputGetState {
+            XINPUT_GET_STATE = mem::transmute(&xinput_get_state_stub);
+        }
+
+        XINPUT_SET_STATE = mem::transmute(GetProcAddress(xinput_library, cstr!("XInputSetState")));
+        if XINPUT_SET_STATE == 0 as *mut XInputSetState {
+            XINPUT_SET_STATE = mem::transmute(&xinput_set_state_stub);
+        }
+    }
+
+    XINPUT_GET_STATE = mem::transmute(&XInputGetState);
+    XINPUT_SET_STATE = mem::transmute(&XInputSetState);
+}
+
+unsafe fn win32_get_window_dimension(window: HWND) -> Win32WindowDiension {
+    let mut client_rect = mem::uninitialized();
+    GetClientRect(window, &mut client_rect);
+    Win32WindowDiension {
+        width: client_rect.right - client_rect.left,
+        height: client_rect.bottom - client_rect.top,
+    }
+}
 
 unsafe fn render_weird_gradient(buffer: &Win32OffscreenBuffer,
                                 blue_offset: i32,
@@ -88,15 +142,6 @@ unsafe fn render_weird_gradient(buffer: &Win32OffscreenBuffer,
     }
 }
 
-unsafe fn win32_get_window_dimension(window: HWND) -> Win32WindowDiension {
-    let mut client_rect = mem::uninitialized();
-    GetClientRect(window, &mut client_rect);
-    Win32WindowDiension {
-        width: client_rect.right - client_rect.left,
-        height: client_rect.bottom - client_rect.top,
-    }
-}
-
 unsafe fn win32_resize_dib_section(buffer: &mut Win32OffscreenBuffer, width: i32, height: i32) {
     // TODO(coeuvre): Bulletproof this.
     // Maybe don't free first, free after, then free first if that fails.
@@ -107,7 +152,8 @@ unsafe fn win32_resize_dib_section(buffer: &mut Win32OffscreenBuffer, width: i32
 
     buffer.width = width;
     buffer.height = height;
-    buffer.bytes_per_pixel = 4;
+
+    let bytes_per_pixel = 4;
 
     // NOTE(coeuvre): When the biheight field is negative, this is the clue to
     // Windows to treat this bitmap as top-down, not bottom-up, meaning that
@@ -123,21 +169,21 @@ unsafe fn win32_resize_dib_section(buffer: &mut Win32OffscreenBuffer, width: i32
     // NOTE(coeuvre): Thank you to Chris Hecker of Spy Party fame
     // for clarifying the deal with StretchDIBits and BitBlt!
     // No more DC for us.
-    let bitmap_memory_size = buffer.width * buffer.height * buffer.bytes_per_pixel;
+    let bitmap_memory_size = buffer.width * buffer.height * bytes_per_pixel;
     buffer.memory = VirtualAlloc(0 as LPVOID,
                                  bitmap_memory_size as u32,
                                  MEM_COMMIT,
                                  PAGE_READWRITE);
 
-    buffer.pitch = (buffer.width * buffer.bytes_per_pixel) as isize;
+    buffer.pitch = (buffer.width * bytes_per_pixel) as isize;
 
     // TODO(coeuvre): Probably clear this to black.
 }
 
-unsafe fn win32_display_buffer_in_window(device_context: HDC,
+unsafe fn win32_display_buffer_in_window(buffer: &Win32OffscreenBuffer,
+                                         device_context: HDC,
                                          window_width: i32,
-                                         window_height: i32,
-                                         buffer: &Win32OffscreenBuffer) {
+                                         window_height: i32) {
     // TODO(coeuvre): Aspect ratio correction
     // TODO(coeuvre): Player wth stretch modes
     StretchDIBits(device_context,
@@ -175,14 +221,49 @@ unsafe extern "system" fn win32_main_window_callback(window: HWND,
             // TODO(coeuvre): Handle this as an error - recreate window?
             GLOBAL_RUNNING = false;
         }
+        WM_SYSKEYDOWN | WM_SYSKEYUP | WM_KEYDOWN | WM_KEYUP => {
+            let vk_code = wparam as i32;
+            let was_down = (lparam & (1 << 30)) != 0;
+            let is_down = (lparam & (1 << 31)) == 0;
+
+            if was_down != is_down {
+                match vk_code as u8 as char {
+                    'W' => {}
+                    'A' => {}
+                    'S' => {}
+                    'D' => {}
+                    'Q' => {}
+                    'E' => {}
+                    _ => {
+                        match vk_code {
+                            VK_UP => {}
+                            VK_LEFT => {}
+                            VK_DOWN => {}
+                            VK_RIGHT => {}
+                            VK_ESCAPE => {
+                                print!("ESCAPSE: ");
+                                if is_down {
+                                    println!("is_down");
+                                }
+                                if was_down {
+                                    println!("was_down");
+                                }
+                            }
+                            VK_SPACE => {}
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
         WM_PAINT => {
             let mut paint = mem::uninitialized();
             let device_context = BeginPaint(window, &mut paint);
             let dimension = win32_get_window_dimension(window);
-            win32_display_buffer_in_window(device_context,
+            win32_display_buffer_in_window(&GLOBAL_BACK_BUFFER,
+                                           device_context,
                                            dimension.width,
-                                           dimension.height,
-                                           &GLOBAL_BACK_BUFFER);
+                                           dimension.height);
             EndPaint(window, &paint);
         }
         _ => return DefWindowProcW(window, message, wparam, lparam),
@@ -192,6 +273,8 @@ unsafe extern "system" fn win32_main_window_callback(window: HWND,
 }
 
 unsafe fn win_main(instance: HINSTANCE) {
+    win32_load_xinput();
+
     let mut window_class: WNDCLASSW = mem::zeroed();
 
     win32_resize_dib_section(&mut GLOBAL_BACK_BUFFER, 1280, 720);
@@ -237,16 +320,45 @@ unsafe fn win_main(instance: HINSTANCE) {
                     DispatchMessageW(&message);
                 }
 
+                // TODO(coeuvre): Should we poll this more frequently?
+                for controller_index in 0..XUSER_MAX_COUNT {
+                    let mut controller_state = mem::uninitialized();
+                    if (*XINPUT_GET_STATE)(controller_index, &mut controller_state) ==
+                       ERROR_SUCCESS {
+                        // NOTE(coeuvre): The controller is plugged in.
+                        // TODO(coeuvre): See if controller_state.dwPacketNumber increments too rapidly.
+                        let ref pad = controller_state.Gamepad;
+
+                        let up = pad.wButtons & XINPUT_GAMEPAD_DPAD_UP;
+                        let down = pad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
+                        let left = pad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
+                        let right = pad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+                        let start = pad.wButtons & XINPUT_GAMEPAD_START;
+                        let back = pad.wButtons & XINPUT_GAMEPAD_BACK;
+                        let left_shoulder = pad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
+                        let right_shoulder = pad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
+                        let a_button = pad.wButtons & XINPUT_GAMEPAD_A;
+                        let b_button = pad.wButtons & XINPUT_GAMEPAD_B;
+                        let x_button = pad.wButtons & XINPUT_GAMEPAD_X;
+                        let y_button = pad.wButtons & XINPUT_GAMEPAD_Y;
+
+                        let stick_x = pad.sThumbLX;
+                        let stick_y = pad.sThumbLY;
+
+                        x_offset += (stick_x >> 12) as i32;
+                        y_offset += (stick_y >> 12) as i32;
+                    } else {
+                        // NOTE(coeuvre): The controller is not available.
+                    }
+                }
+
                 render_weird_gradient(&GLOBAL_BACK_BUFFER, x_offset, y_offset);
 
                 let dimension = win32_get_window_dimension(window);
-                win32_display_buffer_in_window(device_context,
+                win32_display_buffer_in_window(&GLOBAL_BACK_BUFFER,
+                                               device_context,
                                                dimension.width,
-                                               dimension.height,
-                                               &GLOBAL_BACK_BUFFER);
-
-                x_offset += 1;
-                y_offset += 2;
+                                               dimension.height);
             }
         } else {
             // TODO(coeuvre): Logging
@@ -258,6 +370,10 @@ unsafe fn win_main(instance: HINSTANCE) {
 
 fn main() {
     unsafe {
+        // NOTE(coeuvre): Initialize all the global variables which needs call functions.
+        XINPUT_GET_STATE = mem::transmute(&xinput_get_state_stub);
+        XINPUT_SET_STATE = mem::transmute(&xinput_set_state_stub);
+
         // Hide the console window
         let console = GetConsoleWindow();
         if console != 0 as HWND {

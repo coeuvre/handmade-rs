@@ -2,18 +2,20 @@
 name = "handmade"
 version = "0.0.0"
 dependencies = [
- "gdi32-sys 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gdi32-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "kernel32-sys 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "user32-sys 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "xinput-sys 0.0.1 (git+https://github.com/retep998/winapi-rs)",
 ]
 
 [[package]]
 name = "gdi32-sys"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "winapi 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -37,10 +39,29 @@ dependencies = [
 [[package]]
 name = "winapi"
 version = "0.2.5"
+source = "git+https://github.com/retep998/winapi-rs#6a869687d7a59928332d683026c34f5d3401a7d2"
+
+[[package]]
+name = "winapi"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "winapi-build"
 version = "0.1.1"
+source = "git+https://github.com/retep998/winapi-rs#6a869687d7a59928332d683026c34f5d3401a7d2"
+
+[[package]]
+name = "winapi-build"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "xinput-sys"
+version = "0.0.1"
+source = "git+https://github.com/retep998/winapi-rs#6a869687d7a59928332d683026c34f5d3401a7d2"
+dependencies = [
+ "winapi 0.2.5 (git+https://github.com/retep998/winapi-rs)",
+ "winapi-build 0.1.1 (git+https://github.com/retep998/winapi-rs)",
+]
 
