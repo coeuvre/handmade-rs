@@ -1,4 +1,5 @@
 extern crate winapi;
+extern crate dsound;
 extern crate gdi32;
 extern crate kernel32;
 extern crate user32;
@@ -6,14 +7,19 @@ extern crate xinput;
 
 use std::mem;
 
-use winapi::winerror::*;
+use winapi::dsound::*;
+use winapi::guiddef::*;
 use winapi::minwindef::*;
+use winapi::mmreg::*;
+use winapi::unknwnbase::*;
 use winapi::windef::*;
-use winapi::winuser::*;
-use winapi::winnt::*;
+use winapi::winerror::*;
 use winapi::wingdi::*;
+use winapi::winnt::*;
+use winapi::winuser::*;
 use winapi::xinput::*;
 
+use dsound::*;
 use gdi32::*;
 use kernel32::*;
 use user32::*;
@@ -80,15 +86,20 @@ static mut GLOBAL_BACK_BUFFER: Win32OffscreenBuffer = Win32OffscreenBuffer {
 // NOTE(coeuvre): XInputGetState
 type XInputGetState = extern "system" fn(dwUserIndex: DWORD, pState: *mut XINPUT_STATE) -> DWORD;
 extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD {
-    0
+    ERROR_DEVICE_NOT_CONNECTED
 }
 
 // NOTE(coeuvre): XInputSetState
 type XInputSetState = extern "system" fn(dwUserIndex: DWORD, pVibration: *mut XINPUT_VIBRATION)
                                          -> DWORD;
 extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD {
-    0
+    ERROR_DEVICE_NOT_CONNECTED
 }
+
+type DirectSoundCreate = extern "system" fn(pcGuidDevice: LPCGUID,
+                                            ppDS: *mut LPDIRECTSOUND,
+                                            pUnkOuter: LPUNKNOWN)
+                                            -> HRESULT;
 
 static mut XINPUT_GET_STATE: *mut XInputGetState = 0 as *mut XInputGetState;
 static mut XINPUT_SET_STATE: *mut XInputSetState = 0 as *mut XInputSetState;
@@ -98,7 +109,14 @@ unsafe fn win32_load_xinput() {
     // library and set XINPUT_GET_STATE point to function returned by
     // GetProcAddress, it will still crash. So use the static linked
     // function for now.
-    let xinput_library = LoadLibraryW(wstr!("xinput1_3.dll"));
+
+    // TODO(coeuvre): Test this on Windows 8
+    let mut xinput_library = LoadLibraryW(wstr!("xinput1_4.dll"));
+    if xinput_library == 0 as HMODULE {
+        // TODO(coeuvre): Diagnostic
+        xinput_library = LoadLibraryW(wstr!("xinput1_3.dll"));
+    }
+
     if xinput_library != 0 as HMODULE {
         XINPUT_GET_STATE = mem::transmute(GetProcAddress(xinput_library, cstr!("XInputGetState")));
         if XINPUT_GET_STATE == 0 as *mut XInputGetState {
@@ -109,10 +127,88 @@ unsafe fn win32_load_xinput() {
         if XINPUT_SET_STATE == 0 as *mut XInputSetState {
             XINPUT_SET_STATE = mem::transmute(&xinput_set_state_stub);
         }
+
+        // TODO(coeuvre): Diagnostic
+    } else {
+        // TODO(coeuvre): Diagnostic
     }
 
     XINPUT_GET_STATE = mem::transmute(&XInputGetState);
     XINPUT_SET_STATE = mem::transmute(&XInputSetState);
+}
+
+unsafe fn win32_init_dsound(window: HWND, samples_per_second: u32, buffer_size: u32) {
+    // NOTE(coeuvre): Load the library.
+    let dsound_library = LoadLibraryW(wstr!("dsound.dll"));
+    if dsound_library != 0 as HMODULE {
+        // NOTE(coeuvre): Get a DirectSound object! - cooperative
+        let mut direct_sound_create: *mut DirectSoundCreate =
+            mem::transmute(GetProcAddress(dsound_library, cstr!("DirectSoundCreate")));
+
+        // FIXME(coeuvre): For some reasons, even we successfully load DSound
+        // library and set direct_sound_create point to function returned by
+        // GetProcAddress, it will still crash. So use the static linked
+        // function for now.
+        //
+        // Same as loading XInput library.
+        direct_sound_create = mem::transmute(&DirectSoundCreate);
+
+        // TODO(coeuvre): Double-check that this works on XP - DirectSound8 or 7??
+        let mut direct_sound = mem::uninitialized();
+        if direct_sound_create != 0 as *mut DirectSoundCreate &&
+           SUCCEEDED((*direct_sound_create)(0 as LPCGUID, &mut direct_sound, 0 as LPUNKNOWN)) {
+            let mut wave_format: WAVEFORMATEX = mem::zeroed();
+            wave_format.wFormatTag = WAVE_FORMAT_PCM;
+            wave_format.nChannels = 2;
+            wave_format.nSamplesPerSec = samples_per_second;
+            wave_format.wBitsPerSample = 16;
+            wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
+            wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec *
+                                          wave_format.nBlockAlign as u32;
+            wave_format.cbSize = 0;
+
+            if SUCCEEDED((*direct_sound).SetCooperativeLevel(window, DSSCL_PRIORITY)) {
+                let mut buffer_description: DSBUFFERDESC = mem::zeroed();
+                buffer_description.dwSize = mem::size_of::<DSBUFFERDESC>() as u32;
+                buffer_description.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+                // NOTE(coeuvre): "Create" a primary buffer.
+                // TODO(coeuvre): DSBCAPS_GLOBALFOCUS?
+                let mut primary_buffer = mem::uninitialized();
+                if SUCCEEDED((*direct_sound).CreateSoundBuffer(&buffer_description,
+                                                               &mut primary_buffer,
+                                                               0 as LPUNKNOWN)) {
+                    if SUCCEEDED((*primary_buffer).SetFormat(&wave_format)) {
+                        // NOTE(coeuvre): We have finnally set the format!
+                        println!("Primary buffer format was set.");
+                    } else {
+                        // TODO(coeuvre): Diagnostic
+                    }
+                } else {
+                    // TODO(coeuvre): Diagnostic
+                }
+            } else {
+                // TODO(coeuvre): Diagnostic
+            }
+
+            // TODO(coeuvre): DSBCAPS_GETCURRENTPOSITION2
+            let mut buffer_description: DSBUFFERDESC = mem::zeroed();
+            buffer_description.dwSize = mem::size_of::<DSBUFFERDESC>() as u32;
+            buffer_description.dwFlags = 0;
+            buffer_description.dwBufferBytes = buffer_size;
+            buffer_description.lpwfxFormat = &mut wave_format;
+            let mut secondary_buffer = mem::uninitialized();
+            if SUCCEEDED((*direct_sound).CreateSoundBuffer(&buffer_description,
+                                                           &mut secondary_buffer,
+                                                           0 as LPUNKNOWN)) {
+                println!("Secondary buffer created successfully.");
+            }
+        } else {
+            // TODO(coeuvre): Diagnostic
+        }
+    } else {
+        // TODO(coeuvre): Diagnostic
+    }
 }
 
 unsafe fn win32_get_window_dimension(window: HWND) -> Win32WindowDiension {
@@ -172,7 +268,7 @@ unsafe fn win32_resize_dib_section(buffer: &mut Win32OffscreenBuffer, width: i32
     let bitmap_memory_size = buffer.width * buffer.height * bytes_per_pixel;
     buffer.memory = VirtualAlloc(0 as LPVOID,
                                  bitmap_memory_size as u32,
-                                 MEM_COMMIT,
+                                 MEM_RESERVE | MEM_COMMIT,
                                  PAGE_READWRITE);
 
     buffer.pitch = (buffer.width * bytes_per_pixel) as isize;
@@ -255,6 +351,11 @@ unsafe extern "system" fn win32_main_window_callback(window: HWND,
                     }
                 }
             }
+
+            let alt_key_was_down = (lparam & (1 << 29)) != 0;
+            if vk_code == VK_F4 && alt_key_was_down {
+                GLOBAL_RUNNING = false;
+            }
         }
         WM_PAINT => {
             let mut paint = mem::uninitialized();
@@ -306,6 +407,8 @@ unsafe fn win_main(instance: HINSTANCE) {
 
             let mut x_offset = 0;
             let mut y_offset = 0;
+
+            win32_init_dsound(window, 48000, (48000 * mem::size_of::<u16>() * 2) as u32);
 
             GLOBAL_RUNNING = true;
             while GLOBAL_RUNNING {

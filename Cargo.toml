@@ -9,6 +9,7 @@ path = "code/win32_handmade.rs"
 
 [dependencies]
 winapi = "*"
+dsound-sys = { git = "https://github.com/retep998/winapi-rs", path = "lib/dsound" }
 gdi32-sys = "*"
 kernel32-sys = "*"
 user32-sys = "*"
