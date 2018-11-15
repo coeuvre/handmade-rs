@@ -6,4 +6,4 @@ authors = ["coeuvre"]
 [dependencies]
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["libloaderapi", "winuser", "wingdi"] }
+winapi = { version = "0.3", features = ["libloaderapi", "memoryapi", "winuser", "wingdi"] }
