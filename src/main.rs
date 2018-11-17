@@ -2,15 +2,17 @@
 
 extern crate winapi;
 
-use std::mem::{size_of, zeroed};
+use std::mem::{size_of, transmute, zeroed};
 
-use winapi::shared::minwindef::{LPARAM, LPVOID, LRESULT, UINT, WPARAM};
+use winapi::shared::minwindef::{DWORD, HINSTANCE, LPARAM, LPVOID, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HDC, HMENU, HWND, RECT};
-use winapi::um::libloaderapi::GetModuleHandleW;
+use winapi::shared::winerror::ERROR_SUCCESS;
+use winapi::um::libloaderapi::*;
 use winapi::um::memoryapi::*;
 use winapi::um::wingdi::*;
 use winapi::um::winnt::{LPCWCHAR, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE};
 use winapi::um::winuser::*;
+use winapi::um::xinput::*;
 
 macro_rules! wcstring {
     ($s:expr) => {{
@@ -21,6 +23,13 @@ macro_rules! wcstring {
             .encode_wide()
             .chain(once(0))
             .collect::<Vec<u16>>()
+    }};
+}
+
+macro_rules! cstring {
+    ($s:expr) => {{
+        use std::ffi::CString;
+        CString::new($s).unwrap()
     }};
 }
 
@@ -39,6 +48,29 @@ struct Win32WindowDimension {
     height: i32,
 }
 
+type XInputGetStateFn = extern "system" fn(DWORD, *mut XINPUT_STATE) -> DWORD;
+extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD {
+    return 0;
+}
+static mut XINPUT_GET_STATE: XInputGetStateFn = xinput_get_state_stub;
+
+type XInputSetStateFn = extern "system" fn(DWORD, *mut XINPUT_VIBRATION) -> DWORD;
+extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD {
+    return 0;
+}
+static mut XINPUT_SET_STATE: XInputSetStateFn = xinput_set_state_stub;
+
+unsafe fn win32_load_xinput() {
+    let library = LoadLibraryA(cstring!("xinput1_3.dll").as_ptr());
+    if library != 0 as HINSTANCE {
+        XINPUT_GET_STATE = transmute(GetProcAddress(library, cstring!("XInputGetState").as_ptr()));
+        XINPUT_SET_STATE = transmute(GetProcAddress(library, cstring!("XInputSetState").as_ptr()));
+    }
+}
+
+static mut RUNNING: bool = false;
+static mut GLOBAL_BACK_BUFFER: *mut Win32OffScreenBuffer = 0 as *mut Win32OffScreenBuffer;
+
 unsafe fn win32_get_window_dimension(window: HWND) -> Win32WindowDimension {
     let mut client_rect = zeroed::<RECT>();
     GetClientRect(window, &mut client_rect);
@@ -46,9 +78,6 @@ unsafe fn win32_get_window_dimension(window: HWND) -> Win32WindowDimension {
     let height = client_rect.bottom - client_rect.top;
     return Win32WindowDimension { width, height };
 }
-
-static mut RUNNING: bool = false;
-static mut GLOBAL_BACK_BUFFER: *mut Win32OffScreenBuffer = 0 as *mut Win32OffScreenBuffer;
 
 unsafe fn render_weird_gradient(buffer: &mut Win32OffScreenBuffer, x_offset: i32, y_offset: i32) {
     let mut row = buffer.memory as *mut u8;
@@ -94,7 +123,7 @@ unsafe fn win32_display_buffer_in_window(
     device_context: HDC,
     window_width: i32,
     window_height: i32,
-    buffer: &Win32OffScreenBuffer
+    buffer: &Win32OffScreenBuffer,
 ) {
     StretchDIBits(
         device_context,
@@ -131,6 +160,33 @@ unsafe extern "system" fn win32_main_window_proc(
         WM_ACTIVATEAPP => {
             println!("WM_ACTIVATEAPP");
         }
+        WM_SYSKEYDOWN |
+        WM_SYSKEYUP |
+        WM_KEYDOWN |
+        WM_KEYUP => {
+            let vk_code = wparam;
+            let was_down = (lparam & (1 << 30)) != 0;
+            let is_down = (lparam & (1 << 31)) != 0;
+            if was_down != is_down {
+                match vk_code as u8 as char {
+                    'W' => {}
+                    'A' => {}
+                    'S' => {}
+                    'D' => {}
+                    'Q' => {}
+                    'E' => {}
+                    _ => match vk_code as i32 {
+                        VK_UP => {}
+                        VK_LEFT => {}
+                        VK_DOWN => {}
+                        VK_RIGHT => {}
+                        VK_ESCAPE => {}
+                        VK_SPACE => {}
+                        _ => {}
+                    }
+                }
+            }
+        }
         WM_PAINT => {
             let mut ps = zeroed::<PAINTSTRUCT>();
             let device_context = BeginPaint(window, &mut ps);
@@ -139,7 +195,7 @@ unsafe extern "system" fn win32_main_window_proc(
                 device_context,
                 dimension.width,
                 dimension.height,
-                &mut *GLOBAL_BACK_BUFFER
+                &mut *GLOBAL_BACK_BUFFER,
             );
             EndPaint(window, &mut ps);
         }
@@ -150,6 +206,8 @@ unsafe extern "system" fn win32_main_window_proc(
 }
 
 unsafe fn run() -> Result<(), Error> {
+    win32_load_xinput();
+
     win32_resize_dib_section(&mut *GLOBAL_BACK_BUFFER, 1280, 720);
 
     let instance = GetModuleHandleW(0 as LPCWCHAR);
@@ -166,11 +224,10 @@ unsafe fn run() -> Result<(), Error> {
         return Err("Failed to register class");
     }
 
-    let window_name = wcstring!("Handmade Hero");
     let window = CreateWindowExW(
         0,
         class_name.as_ptr(),
-        window_name.as_ptr(),
+        wcstring!("Handmade Hero").as_ptr(),
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -187,8 +244,8 @@ unsafe fn run() -> Result<(), Error> {
     let device_context = GetDC(window);
 
     let mut message = zeroed::<MSG>();
-    let mut x_offset = 0;
-    let mut y_offset = 0;
+    let mut x_offset: i32 = 0;
+    let mut y_offset: i32 = 0;
 
     RUNNING = true;
     while RUNNING {
@@ -201,6 +258,31 @@ unsafe fn run() -> Result<(), Error> {
             DispatchMessageW(&message);
         }
 
+        for i in 0..XUSER_MAX_COUNT {
+            let mut controller_state = zeroed::<XINPUT_STATE>();
+            if XINPUT_GET_STATE(i, &mut controller_state) == ERROR_SUCCESS {
+                let pad = &controller_state.Gamepad;
+                let up = pad.wButtons & XINPUT_GAMEPAD_DPAD_UP;
+                let down = pad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
+                let left = pad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
+                let right = pad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+                let start = pad.wButtons & XINPUT_GAMEPAD_START;
+                let back = pad.wButtons & XINPUT_GAMEPAD_BACK;
+                let left_shoulder = pad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
+                let right_shoulder = pad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
+                let a_button = pad.wButtons & XINPUT_GAMEPAD_A;
+                let b_button = pad.wButtons & XINPUT_GAMEPAD_B;
+                let x_button = pad.wButtons & XINPUT_GAMEPAD_X;
+                let y_button = pad.wButtons & XINPUT_GAMEPAD_Y;
+
+                let stick_x = pad.sThumbLX;
+                let stick_y = pad.sThumbLY;
+
+                x_offset += (stick_x >> 12) as i32;
+                y_offset += (stick_y >> 12) as i32;
+            }
+        }
+
         render_weird_gradient(&mut *GLOBAL_BACK_BUFFER, x_offset, y_offset);
 
         let dimension = win32_get_window_dimension(window);
@@ -208,11 +290,8 @@ unsafe fn run() -> Result<(), Error> {
             device_context,
             dimension.width,
             dimension.height,
-            &*GLOBAL_BACK_BUFFER
+            &*GLOBAL_BACK_BUFFER,
         );
-
-        x_offset += 1;
-        y_offset += 2;
     }
 
     Ok(())
