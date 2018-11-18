@@ -3,14 +3,19 @@
 extern crate winapi;
 
 use std::mem::{size_of, transmute, zeroed};
+use std::ptr::{null, null_mut};
 
+use winapi::shared::guiddef::LPCGUID;
 use winapi::shared::minwindef::{DWORD, HINSTANCE, LPARAM, LPVOID, LRESULT, UINT, WPARAM};
+use winapi::shared::mmreg::*;
 use winapi::shared::windef::{HDC, HMENU, HWND, RECT};
-use winapi::shared::winerror::ERROR_SUCCESS;
+use winapi::shared::winerror::{ERROR_DEVICE_NOT_CONNECTED, ERROR_SUCCESS, SUCCEEDED};
+use winapi::um::dsound::*;
 use winapi::um::libloaderapi::*;
 use winapi::um::memoryapi::*;
+use winapi::um::unknwnbase::LPUNKNOWN;
 use winapi::um::wingdi::*;
-use winapi::um::winnt::{LPCWCHAR, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE};
+use winapi::um::winnt::{HRESULT, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE};
 use winapi::um::winuser::*;
 use winapi::um::xinput::*;
 
@@ -50,18 +55,21 @@ struct Win32WindowDimension {
 
 type XInputGetStateFn = extern "system" fn(DWORD, *mut XINPUT_STATE) -> DWORD;
 extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD {
-    return 0;
+    return ERROR_DEVICE_NOT_CONNECTED;
 }
 static mut XINPUT_GET_STATE: XInputGetStateFn = xinput_get_state_stub;
 
 type XInputSetStateFn = extern "system" fn(DWORD, *mut XINPUT_VIBRATION) -> DWORD;
 extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD {
-    return 0;
+    return ERROR_DEVICE_NOT_CONNECTED;
 }
 static mut XINPUT_SET_STATE: XInputSetStateFn = xinput_set_state_stub;
 
 unsafe fn win32_load_xinput() {
-    let library = LoadLibraryA(cstring!("xinput1_3.dll").as_ptr());
+    let mut library = LoadLibraryA(cstring!("xinput1_4.dll").as_ptr());
+    if library == 0 as HINSTANCE {
+        library = LoadLibraryA(cstring!("xinput1_3.dll").as_ptr());
+    }
     if library != 0 as HINSTANCE {
         XINPUT_GET_STATE = transmute(GetProcAddress(library, cstring!("XInputGetState").as_ptr()));
         XINPUT_SET_STATE = transmute(GetProcAddress(library, cstring!("XInputSetState").as_ptr()));
@@ -70,6 +78,72 @@ unsafe fn win32_load_xinput() {
 
 static mut RUNNING: bool = false;
 static mut GLOBAL_BACK_BUFFER: *mut Win32OffScreenBuffer = 0 as *mut Win32OffScreenBuffer;
+
+type DirectSoundCreateFn = fn(LPCGUID, *mut LPDIRECTSOUND, LPUNKNOWN) -> HRESULT;
+
+unsafe fn win32_init_dsound(window: HWND, samples_per_seconds: u32, buffer_size: u32) {
+    let library = LoadLibraryA(cstring!("dsound.dll").as_ptr());
+    if library == 0 as HINSTANCE {
+        return;
+    }
+
+    let ptr = GetProcAddress(library, cstring!("DirectSoundCreate").as_ptr());
+    if ptr == null_mut() {
+        return;
+    }
+
+    let mut direct_sound: *mut IDirectSound = null_mut();
+    let direct_sound_create: DirectSoundCreateFn = transmute(ptr);
+    let result = direct_sound_create(null(), &mut direct_sound, null_mut());
+    if SUCCEEDED(result) {
+        let mut wave_format = zeroed::<WAVEFORMATEX>();
+        wave_format.wFormatTag = WAVE_FORMAT_PCM;
+        wave_format.nChannels = 2;
+        wave_format.nSamplesPerSec = samples_per_seconds;
+        wave_format.wBitsPerSample = 16;
+        wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
+        wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec * (wave_format.nBlockAlign as u32);
+
+        // Create primary buffer
+        let result = (*direct_sound).SetCooperativeLevel(window, DSSCL_PRIORITY);
+        if SUCCEEDED(result) {
+            let mut buffer_description = zeroed::<DSBUFFERDESC>();
+            buffer_description.dwSize = size_of::<DSBUFFERDESC>() as u32;
+            buffer_description.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+            let mut primary_buffer: *mut IDirectSoundBuffer = null_mut();
+            let result = (*direct_sound).CreateSoundBuffer(
+                &buffer_description,
+                &mut primary_buffer,
+                null_mut(),
+            );
+            if SUCCEEDED(result) {
+                let result = (*primary_buffer).SetFormat(&mut wave_format);
+                if SUCCEEDED(result) {
+                    println!("Primary buffer format was set");
+                }
+            }
+        }
+
+        // Create secondary buffer
+        {
+            let mut buffer_description = zeroed::<DSBUFFERDESC>();
+            buffer_description.dwSize = size_of::<DSBUFFERDESC>() as u32;
+            buffer_description.dwBufferBytes = buffer_size;
+            buffer_description.lpwfxFormat = &mut wave_format;
+
+            let mut secondary_buffer: *mut IDirectSoundBuffer = null_mut();
+            let result = (*direct_sound).CreateSoundBuffer(
+                &buffer_description,
+                &mut secondary_buffer,
+                null_mut(),
+            );
+            if SUCCEEDED(result) {
+                println!("Secondary buffer created");
+            }
+        }
+    }
+}
 
 unsafe fn win32_get_window_dimension(window: HWND) -> Win32WindowDimension {
     let mut client_rect = zeroed::<RECT>();
@@ -94,7 +168,7 @@ unsafe fn render_weird_gradient(buffer: &mut Win32OffScreenBuffer, x_offset: i32
 }
 
 unsafe fn win32_resize_dib_section(buffer: &mut Win32OffScreenBuffer, width: i32, height: i32) {
-    if buffer.memory != 0 as LPVOID {
+    if buffer.memory != null_mut() {
         VirtualFree(buffer.memory, 0 as usize, MEM_RELEASE);
     }
 
@@ -111,7 +185,7 @@ unsafe fn win32_resize_dib_section(buffer: &mut Win32OffScreenBuffer, width: i32
 
     let bitmap_memory_size = buffer.width * buffer.height * bytes_per_pixel;
     buffer.memory = VirtualAlloc(
-        0 as LPVOID,
+        null_mut(),
         bitmap_memory_size as usize,
         MEM_COMMIT,
         PAGE_READWRITE,
@@ -160,11 +234,8 @@ unsafe extern "system" fn win32_main_window_proc(
         WM_ACTIVATEAPP => {
             println!("WM_ACTIVATEAPP");
         }
-        WM_SYSKEYDOWN |
-        WM_SYSKEYUP |
-        WM_KEYDOWN |
-        WM_KEYUP => {
-            let vk_code = wparam;
+        WM_SYSKEYDOWN | WM_SYSKEYUP | WM_KEYDOWN | WM_KEYUP => {
+            let vk_code = wparam as i32;
             let was_down = (lparam & (1 << 30)) != 0;
             let is_down = (lparam & (1 << 31)) != 0;
             if was_down != is_down {
@@ -175,7 +246,7 @@ unsafe extern "system" fn win32_main_window_proc(
                     'D' => {}
                     'Q' => {}
                     'E' => {}
-                    _ => match vk_code as i32 {
+                    _ => match vk_code {
                         VK_UP => {}
                         VK_LEFT => {}
                         VK_DOWN => {}
@@ -183,8 +254,13 @@ unsafe extern "system" fn win32_main_window_proc(
                         VK_ESCAPE => {}
                         VK_SPACE => {}
                         _ => {}
-                    }
+                    },
                 }
+            }
+
+            let alt_key_was_down = lparam & (1 << 29);
+            if is_down && (vk_code == VK_ESCAPE || alt_key_was_down != 0 && vk_code == VK_F4) {
+                RUNNING = false;
             }
         }
         WM_PAINT => {
@@ -210,7 +286,7 @@ unsafe fn run() -> Result<(), Error> {
 
     win32_resize_dib_section(&mut *GLOBAL_BACK_BUFFER, 1280, 720);
 
-    let instance = GetModuleHandleW(0 as LPCWCHAR);
+    let instance = GetModuleHandleW(null_mut());
 
     let mut window_class = zeroed::<WNDCLASSW>();
     let class_name = wcstring!("HandmadeHeroWindowClass");
@@ -236,12 +312,14 @@ unsafe fn run() -> Result<(), Error> {
         0 as HWND,
         0 as HMENU,
         instance,
-        0 as LPVOID,
+        null_mut(),
     );
     if window == 0 as HWND {
         return Err("Failed to create window");
     }
     let device_context = GetDC(window);
+
+    win32_init_dsound(window, 48000, 48000 * 2 * 2);
 
     let mut message = zeroed::<MSG>();
     let mut x_offset: i32 = 0;
