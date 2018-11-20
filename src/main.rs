@@ -68,8 +68,12 @@ static mut XINPUT_SET_STATE: XInputSetStateFn = xinput_set_state_stub;
 unsafe fn win32_load_xinput() {
     let mut library = LoadLibraryA(cstring!("xinput1_4.dll").as_ptr());
     if library == 0 as HINSTANCE {
+        library = LoadLibraryA(cstring!("xinput9_1_0.dll").as_ptr());
+    }
+    if library == 0 as HINSTANCE {
         library = LoadLibraryA(cstring!("xinput1_3.dll").as_ptr());
     }
+
     if library != 0 as HINSTANCE {
         XINPUT_GET_STATE = transmute(GetProcAddress(library, cstring!("XInputGetState").as_ptr()));
         XINPUT_SET_STATE = transmute(GetProcAddress(library, cstring!("XInputSetState").as_ptr()));
@@ -281,6 +285,74 @@ unsafe extern "system" fn win32_main_window_proc(
     0
 }
 
+struct Win32SoundOutput {
+    samples_per_second: u32,
+    bytes_per_sample: u32,
+    tone_hz: u32,
+    tone_volume: i16,
+    wave_period: u32,
+    secondary_buffer_size: u32,
+    running_sample_index: u32,
+    t_sine: f32,
+    latency_sample_count: u32,
+}
+
+unsafe fn win32_fill_sound_buffer(
+    sound_output: &mut Win32SoundOutput,
+    byte_to_lock: u32,
+    bytes_to_write: u32,
+) {
+    let mut region1 = null_mut();
+    let mut region1_size = 0;
+    let mut region2 = null_mut();
+    let mut region2_size = 0;
+    let result = (*GLOBAL_SECONDARY_BUFFER).Lock(
+        byte_to_lock,
+        bytes_to_write,
+        &mut region1,
+        &mut region1_size,
+        &mut region2,
+        &mut region2_size,
+        0,
+    );
+    if SUCCEEDED(result) {
+        // [i16  i16  ] i16  i16   ...
+        // [LEFT RIGHT] LEFT RIGHT ...
+        let mut sample_out = region1 as *mut i16;
+        let region1_sample_count = region1_size / sound_output.bytes_per_sample;
+
+        for sample_index in 0..region1_sample_count {
+            let sine_value = sound_output.t_sine.sin();
+            let sample_value = (sine_value * sound_output.tone_volume as f32) as i16;
+            (*sample_out) = sample_value;
+            sample_out = sample_out.offset(1);
+            (*sample_out) = sample_value;
+            sample_out = sample_out.offset(1);
+
+            sound_output.t_sine +=
+                (1.0 / sound_output.wave_period as f32) * 2.0 * std::f32::consts::PI;
+            sound_output.running_sample_index += 1;
+        }
+
+        sample_out = region2 as *mut i16;
+        let region2_sample_count = region2_size / sound_output.bytes_per_sample;
+        for sample_index in 0..region2_sample_count {
+            let t = (sound_output.running_sample_index as f32 / sound_output.wave_period as f32)
+                * 2.0
+                * std::f32::consts::PI;
+            let sine_value = t.sin();
+            let sample_value = (sine_value * sound_output.tone_volume as f32) as i16;
+            (*sample_out) = sample_value;
+            sample_out = sample_out.offset(1);
+            (*sample_out) = sample_value;
+            sample_out = sample_out.offset(1);
+            sound_output.running_sample_index += 1;
+        }
+
+        (*GLOBAL_SECONDARY_BUFFER).Unlock(region1, region1_size, region2, region2_size);
+    }
+}
+
 unsafe fn run() -> Result<(), Error> {
     win32_load_xinput();
 
@@ -322,13 +394,25 @@ unsafe fn run() -> Result<(), Error> {
     let samples_per_second = 48000;
     let bytes_per_sample = (size_of::<u16>() * 2) as u32;
     let tone_hz = 256;
-    let tone_volume: i16 = 3000;
-    let square_wave_period = samples_per_second / tone_hz;
-    let half_square_wave_period = square_wave_period / 2;
-    let secondary_buffer_size = samples_per_second * bytes_per_sample;
-    let mut running_sample_index: u32 = 0;
-    win32_init_dsound(window, samples_per_second, secondary_buffer_size);
-    let mut sound_is_playing = false;
+    let mut sound_output = Win32SoundOutput {
+        samples_per_second,
+        bytes_per_sample,
+        tone_hz,
+        tone_volume: 3000,
+        wave_period: samples_per_second / tone_hz,
+        secondary_buffer_size: samples_per_second * bytes_per_sample,
+        running_sample_index: 0,
+        t_sine: 0.0,
+        latency_sample_count: samples_per_second / 15,
+    };
+    win32_init_dsound(
+        window,
+        samples_per_second,
+        sound_output.secondary_buffer_size,
+    );
+    let bytes_to_write = sound_output.latency_sample_count * sound_output.bytes_per_sample;
+    win32_fill_sound_buffer(&mut sound_output, 0, bytes_to_write);
+    (*GLOBAL_SECONDARY_BUFFER).Play(0, 0, DSBPLAY_LOOPING);
 
     let mut x_offset: i32 = 0;
     let mut y_offset: i32 = 0;
@@ -365,8 +449,13 @@ unsafe fn run() -> Result<(), Error> {
                 let stick_x = pad.sThumbLX;
                 let stick_y = pad.sThumbLY;
 
-                x_offset += (stick_x >> 12) as i32;
-                y_offset += (stick_y >> 12) as i32;
+                x_offset += (stick_x as f32 / 4096.0) as i32;
+                y_offset += (stick_y as f32 / 4096.0) as i32;
+
+                sound_output.tone_hz = 512u32
+                    .overflowing_add((256.0 * (stick_y as f32 / 30000.0)) as u32)
+                    .0;
+                sound_output.wave_period = sound_output.samples_per_second / sound_output.tone_hz;
             }
         }
 
@@ -379,69 +468,19 @@ unsafe fn run() -> Result<(), Error> {
             let result =
                 (*GLOBAL_SECONDARY_BUFFER).GetCurrentPosition(&mut play_cursor, &mut write_cursor);
             if SUCCEEDED(result) {
-                let byte_to_lock = (running_sample_index * bytes_per_sample) % secondary_buffer_size;
-                let bytes_to_write = if byte_to_lock == play_cursor {
-                    secondary_buffer_size
-                } else if byte_to_lock > play_cursor {
-                    (secondary_buffer_size - byte_to_lock) + play_cursor
+                let byte_to_lock = (sound_output.running_sample_index * sound_output.bytes_per_sample)
+                    % sound_output.secondary_buffer_size;
+                let target_cursor = (play_cursor
+                    + sound_output.latency_sample_count * sound_output.bytes_per_sample)
+                    % sound_output.secondary_buffer_size;
+
+                let bytes_to_write = if byte_to_lock > target_cursor {
+                    (sound_output.secondary_buffer_size - byte_to_lock) + target_cursor
                 } else {
-                    play_cursor - byte_to_lock
+                    target_cursor - byte_to_lock
                 };
 
-                let mut region1 = null_mut();
-                let mut region1_size = 0;
-                let mut region2 = null_mut();
-                let mut region2_size = 0;
-                let result = (*GLOBAL_SECONDARY_BUFFER).Lock(
-                    byte_to_lock,
-                    bytes_to_write,
-                    &mut region1,
-                    &mut region1_size,
-                    &mut region2,
-                    &mut region2_size,
-                    0,
-                );
-                if SUCCEEDED(result) {
-                    // [i16  i16  ] i16  i16   ...
-                    // [LEFT RIGHT] LEFT RIGHT ...
-                    let mut sample_out = region1 as *mut i16;
-                    let region1_sample_count = region1_size / bytes_per_sample;
-
-                    for sample_index in 0..region1_sample_count {
-                        let sample_value = if (running_sample_index / half_square_wave_period) % 2 == 0 {
-                            tone_volume
-                        } else {
-                            -tone_volume
-                        };
-                        (*sample_out) = sample_value;
-                        sample_out = sample_out.offset(1);
-                        (*sample_out) = sample_value;
-                        sample_out = sample_out.offset(1);
-                        running_sample_index += 1;
-                    }
-
-                    sample_out = region2 as *mut i16;
-                    let region2_sample_count = region2_size / bytes_per_sample;
-                    for sample_index in 0..region2_sample_count {
-                        let sample_value = if (running_sample_index / half_square_wave_period) % 2 == 0 {
-                            tone_volume
-                        } else {
-                            -tone_volume
-                        };
-                        (*sample_out) = sample_value;
-                        sample_out = sample_out.offset(1);
-                        (*sample_out) = sample_value;
-                        sample_out = sample_out.offset(1);
-                        running_sample_index += 1;
-                    }
-
-                    (*GLOBAL_SECONDARY_BUFFER).Unlock(region1, region1_size, region2, region2_size);
-
-                    if !sound_is_playing {
-                        sound_is_playing = true;
-                        (*GLOBAL_SECONDARY_BUFFER).Play(0, 0, DSBPLAY_LOOPING);
-                    }
-                }
+                win32_fill_sound_buffer(&mut sound_output, byte_to_lock, bytes_to_write);
             }
         }
 
