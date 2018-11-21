@@ -1,6 +1,12 @@
 #![windows_subsystem = "windows"]
 
+extern crate core;
 extern crate winapi;
+
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::_rdtsc;
+#[cfg(target_arch = "x86")]
+use core::arch::x86::_rdtsc;
 
 use std::mem::{size_of, transmute, zeroed};
 use std::ptr::{null, null_mut};
@@ -13,9 +19,10 @@ use winapi::shared::winerror::{ERROR_DEVICE_NOT_CONNECTED, ERROR_SUCCESS, SUCCEE
 use winapi::um::dsound::*;
 use winapi::um::libloaderapi::*;
 use winapi::um::memoryapi::*;
+use winapi::um::profileapi::*;
 use winapi::um::unknwnbase::LPUNKNOWN;
 use winapi::um::wingdi::*;
-use winapi::um::winnt::{HRESULT, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE};
+use winapi::um::winnt::{HRESULT, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE, LARGE_INTEGER};
 use winapi::um::winuser::*;
 use winapi::um::xinput::*;
 
@@ -354,6 +361,10 @@ unsafe fn win32_fill_sound_buffer(
 }
 
 unsafe fn run() -> Result<(), Error> {
+    let mut perf_count_frequency = zeroed::<LARGE_INTEGER>();
+    QueryPerformanceFrequency(&mut perf_count_frequency);
+    let perf_count_frequency = *perf_count_frequency.QuadPart();
+
     win32_load_xinput();
 
     win32_resize_dib_section(&mut *GLOBAL_BACK_BUFFER, 1280, 720);
@@ -418,6 +429,10 @@ unsafe fn run() -> Result<(), Error> {
     let mut y_offset: i32 = 0;
 
     RUNNING = true;
+
+    let mut last_counter = zeroed::<LARGE_INTEGER>();
+    QueryPerformanceCounter(&mut last_counter);
+    let mut last_cycle_count = _rdtsc();
     while RUNNING {
         let mut message = zeroed::<MSG>();
         while PeekMessageW(&mut message, 0 as HWND, 0, 0, PM_REMOVE) != 0 {
@@ -468,7 +483,8 @@ unsafe fn run() -> Result<(), Error> {
             let result =
                 (*GLOBAL_SECONDARY_BUFFER).GetCurrentPosition(&mut play_cursor, &mut write_cursor);
             if SUCCEEDED(result) {
-                let byte_to_lock = (sound_output.running_sample_index * sound_output.bytes_per_sample)
+                let byte_to_lock = (sound_output.running_sample_index
+                    * sound_output.bytes_per_sample)
                     % sound_output.secondary_buffer_size;
                 let target_cursor = (play_cursor
                     + sound_output.latency_sample_count * sound_output.bytes_per_sample)
@@ -491,6 +507,20 @@ unsafe fn run() -> Result<(), Error> {
             dimension.height,
             &*GLOBAL_BACK_BUFFER,
         );
+
+        let end_cycle_count = _rdtsc();
+
+        let mut end_counter = zeroed::<LARGE_INTEGER>();
+        QueryPerformanceCounter(&mut end_counter);
+
+        let cycles_elapsed = end_cycle_count - last_cycle_count;
+        let counter_elapsed = end_counter.QuadPart() - last_counter.QuadPart();
+        let ms_per_frame = counter_elapsed * 1000 / perf_count_frequency;
+        let fps = perf_count_frequency / counter_elapsed;
+        println!("{}ms/f, {}f/s, {}c/f", ms_per_frame, fps, cycles_elapsed);
+
+        last_counter = end_counter;
+        last_cycle_count = end_cycle_count;
     }
 
     Ok(())
