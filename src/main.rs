@@ -3,6 +3,8 @@
 extern crate core;
 extern crate winapi;
 
+mod game;
+
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::_rdtsc;
 #[cfg(target_arch = "x86")]
@@ -25,6 +27,8 @@ use winapi::um::wingdi::*;
 use winapi::um::winnt::{HRESULT, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE, LARGE_INTEGER};
 use winapi::um::winuser::*;
 use winapi::um::xinput::*;
+
+use game::*;
 
 macro_rules! wcstring {
     ($s:expr) => {{
@@ -162,20 +166,6 @@ unsafe fn win32_get_window_dimension(window: HWND) -> Win32WindowDimension {
     let width = client_rect.right - client_rect.left;
     let height = client_rect.bottom - client_rect.top;
     return Win32WindowDimension { width, height };
-}
-
-unsafe fn render_weird_gradient(buffer: &mut Win32OffScreenBuffer, x_offset: i32, y_offset: i32) {
-    let mut row = buffer.memory as *mut u8;
-    for y in 0..buffer.height {
-        let mut pixel = row as *mut u32;
-        for x in 0..buffer.width {
-            let b = x + x_offset;
-            let g = y + y_offset;
-            *pixel = (((g & 0xFF) << 8) | (b & 0xFF)) as u32;
-            pixel = pixel.offset(1);
-        }
-        row = row.offset(buffer.pitch as isize);
-    }
 }
 
 unsafe fn win32_resize_dib_section(buffer: &mut Win32OffScreenBuffer, width: i32, height: i32) {
@@ -474,7 +464,13 @@ unsafe fn run() -> Result<(), Error> {
             }
         }
 
-        render_weird_gradient(&mut *GLOBAL_BACK_BUFFER, x_offset, y_offset);
+        let mut buffer = GameOffScreenBuffer {
+            memory: (*GLOBAL_BACK_BUFFER).memory as *mut u8,
+            width: (*GLOBAL_BACK_BUFFER).width,
+            height: (*GLOBAL_BACK_BUFFER).height,
+            pitch: (*GLOBAL_BACK_BUFFER).pitch,
+        };
+        game_update_and_render(&mut buffer);
 
         // DirectSound output test
         {
