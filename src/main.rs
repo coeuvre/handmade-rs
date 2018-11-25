@@ -5,10 +5,10 @@ extern crate winapi;
 
 mod game;
 
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::_rdtsc;
 #[cfg(target_arch = "x86")]
 use core::arch::x86::_rdtsc;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::_rdtsc;
 
 use std::mem::{size_of, transmute, zeroed};
 use std::ptr::{null, null_mut};
@@ -24,7 +24,7 @@ use winapi::um::memoryapi::*;
 use winapi::um::profileapi::*;
 use winapi::um::unknwnbase::LPUNKNOWN;
 use winapi::um::wingdi::*;
-use winapi::um::winnt::{HRESULT, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE, LARGE_INTEGER};
+use winapi::um::winnt::{HRESULT, LARGE_INTEGER, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE};
 use winapi::um::winuser::*;
 use winapi::um::xinput::*;
 
@@ -285,9 +285,6 @@ unsafe extern "system" fn win32_main_window_proc(
 struct Win32SoundOutput {
     samples_per_second: u32,
     bytes_per_sample: u32,
-    tone_hz: u32,
-    tone_volume: i16,
-    wave_period: u32,
     secondary_buffer_size: u32,
     running_sample_index: u32,
     latency_sample_count: u32,
@@ -309,13 +306,13 @@ unsafe fn win32_clear_buffer(sound_output: &mut Win32SoundOutput) {
     );
     if SUCCEEDED(result) {
         let mut dest_sample = region1 as *mut u8;
-        for byte_index in 0..region1_size {
+        for _ in 0..region1_size {
             (*dest_sample) = 0;
             dest_sample = dest_sample.add(1);
         }
 
         dest_sample = region2 as *mut u8;
-        for byte_index in 0..region2_size {
+        for _ in 0..region2_size {
             (*dest_sample) = 0;
             dest_sample = dest_sample.add(1);
         }
@@ -350,7 +347,7 @@ unsafe fn win32_fill_sound_buffer(
         let mut source_sample = source_buffer.samples;
         let region1_sample_count = region1_size / sound_output.bytes_per_sample;
 
-        for sample_index in 0..region1_sample_count {
+        for _ in 0..region1_sample_count {
             (*dest_sample) = *source_sample;
             dest_sample = dest_sample.add(1);
             source_sample = source_sample.add(1);
@@ -364,7 +361,7 @@ unsafe fn win32_fill_sound_buffer(
 
         dest_sample = region2 as *mut i16;
         let region2_sample_count = region2_size / sound_output.bytes_per_sample;
-        for sample_index in 0..region2_sample_count {
+        for _ in 0..region2_sample_count {
             (*dest_sample) = *source_sample;
             dest_sample = dest_sample.add(1);
             source_sample = source_sample.add(1);
@@ -378,6 +375,11 @@ unsafe fn win32_fill_sound_buffer(
 
         (*GLOBAL_SECONDARY_BUFFER).Unlock(region1, region1_size, region2, region2_size);
     }
+}
+
+unsafe fn win32_process_xinput_digitial_button(xinput_button_state: u16, old_state: &GameButtonState, button_bit: u16, new_state: &mut GameButtonState) {
+    new_state.ended_down = (xinput_button_state & button_bit) == button_bit;
+    new_state.half_transition_count = if old_state.ended_down == new_state.ended_down { 1 } else { 0 };
 }
 
 unsafe fn run() -> Result<(), Error> {
@@ -424,16 +426,12 @@ unsafe fn run() -> Result<(), Error> {
 
     let samples_per_second = 48000;
     let bytes_per_sample = (size_of::<u16>() * 2) as u32;
-    let tone_hz = 256;
     let mut sound_output = Win32SoundOutput {
         samples_per_second,
         bytes_per_sample,
-        tone_hz,
-        tone_volume: 3000,
-        wave_period: samples_per_second / tone_hz,
         secondary_buffer_size: samples_per_second * bytes_per_sample,
         running_sample_index: 0,
-        latency_sample_count: samples_per_second / 30,
+        latency_sample_count: samples_per_second / 15,
     };
     win32_init_dsound(
         window,
@@ -450,10 +448,11 @@ unsafe fn run() -> Result<(), Error> {
         PAGE_READWRITE,
     ) as *mut i16;
 
-    let mut x_offset: i32 = 0;
-    let mut y_offset: i32 = 0;
-
     RUNNING = true;
+
+    let mut input = [zeroed::<GameInput>(), zeroed::<GameInput>()];
+    let mut old_input = &mut *(&mut input[0] as *mut GameInput);
+    let mut new_input = &mut *(&mut input[1] as *mut GameInput);
 
     let mut last_counter = zeroed::<LARGE_INTEGER>();
     QueryPerformanceCounter(&mut last_counter);
@@ -469,33 +468,53 @@ unsafe fn run() -> Result<(), Error> {
             DispatchMessageW(&message);
         }
 
-        for i in 0..XUSER_MAX_COUNT {
+        let mut max_controller_count = XUSER_MAX_COUNT;
+        if max_controller_count > new_input.controllers.len() as u32 {
+            max_controller_count = new_input.controllers.len() as u32;
+        }
+
+        for i in 0..max_controller_count {
+            let old_controller = &old_input.controllers[i as usize];
+            let new_controller = &mut new_input.controllers[i as usize];
+
             let mut controller_state = zeroed::<XINPUT_STATE>();
             if XINPUT_GET_STATE(i, &mut controller_state) == ERROR_SUCCESS {
                 let pad = &controller_state.Gamepad;
-                let up = pad.wButtons & XINPUT_GAMEPAD_DPAD_UP;
-                let down = pad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
-                let left = pad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
-                let right = pad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
-                let start = pad.wButtons & XINPUT_GAMEPAD_START;
-                let back = pad.wButtons & XINPUT_GAMEPAD_BACK;
-                let left_shoulder = pad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
-                let right_shoulder = pad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
-                let a_button = pad.wButtons & XINPUT_GAMEPAD_A;
-                let b_button = pad.wButtons & XINPUT_GAMEPAD_B;
-                let x_button = pad.wButtons & XINPUT_GAMEPAD_X;
-                let y_button = pad.wButtons & XINPUT_GAMEPAD_Y;
 
-                let stick_x = pad.sThumbLX;
-                let stick_y = pad.sThumbLY;
+                //let up = pad.wButtons & XINPUT_GAMEPAD_DPAD_UP;
+                //let down = pad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
+                //let left = pad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
+                //let right = pad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+                //let start = pad.wButtons & XINPUT_GAMEPAD_START;
 
-                x_offset += (stick_x as f32 / 4096.0) as i32;
-                y_offset += (stick_y as f32 / 4096.0) as i32;
+                new_controller.is_analog = true;
+                new_controller.start_x = old_controller.end_x;
+                new_controller.start_y = old_controller.end_y;
 
-                sound_output.tone_hz = 512u32
-                    .overflowing_add((256.0 * (stick_y as f32 / 30000.0)) as u32)
-                    .0;
-                sound_output.wave_period = sound_output.samples_per_second / sound_output.tone_hz;
+                let x = if pad.sThumbLX < 0 {
+                    pad.sThumbLX as f32 / 32768.0
+                } else {
+                    pad.sThumbLX as f32 / 32767.0
+                };
+                new_controller.min_x = x;
+                new_controller.max_x = x;
+                new_controller.end_x = x;
+
+                let y = if pad.sThumbLY < 0 {
+                    pad.sThumbLY as f32 / 32768.0
+                } else {
+                    pad.sThumbLY as f32 / 32767.0
+                };
+                new_controller.min_y = y;
+                new_controller.max_y = y;
+                new_controller.end_y = y;
+
+                win32_process_xinput_digitial_button(pad.wButtons, &old_controller.down, XINPUT_GAMEPAD_A, &mut new_controller.down);
+                win32_process_xinput_digitial_button(pad.wButtons, &old_controller.right, XINPUT_GAMEPAD_B, &mut new_controller.right);
+                win32_process_xinput_digitial_button(pad.wButtons, &old_controller.left, XINPUT_GAMEPAD_X, &mut new_controller.left);
+                win32_process_xinput_digitial_button(pad.wButtons, &old_controller.up, XINPUT_GAMEPAD_Y, &mut new_controller.up);
+                win32_process_xinput_digitial_button(pad.wButtons, &old_controller.left_shoulder, XINPUT_GAMEPAD_LEFT_SHOULDER, &mut new_controller.left_shoulder);
+                win32_process_xinput_digitial_button(pad.wButtons, &old_controller.right_shoulder, XINPUT_GAMEPAD_RIGHT_SHOULDER, &mut new_controller.right_shoulder);
             }
         }
 
@@ -503,15 +522,14 @@ unsafe fn run() -> Result<(), Error> {
         let mut play_cursor = 0;
         let mut write_cursor = 0;
         let mut byte_to_lock = 0;
-        let mut target_cursor = 0;
+        let target_cursor;
         let mut bytes_to_write = 0;
         let result =
             (*GLOBAL_SECONDARY_BUFFER).GetCurrentPosition(&mut play_cursor, &mut write_cursor);
         if SUCCEEDED(result) {
             is_sound_valid = true;
 
-            byte_to_lock = (sound_output.running_sample_index
-                * sound_output.bytes_per_sample)
+            byte_to_lock = (sound_output.running_sample_index * sound_output.bytes_per_sample)
                 % sound_output.secondary_buffer_size;
             target_cursor = (play_cursor
                 + sound_output.latency_sample_count * sound_output.bytes_per_sample)
@@ -534,13 +552,18 @@ unsafe fn run() -> Result<(), Error> {
         let mut sound_buffer = GameSoundOutputBuffer {
             samples,
             sample_count: bytes_to_write / sound_output.bytes_per_sample,
-            samples_per_second: sound_output.samples_per_second ,
+            samples_per_second: sound_output.samples_per_second,
         };
-        game_update_and_render(&mut buffer, &mut sound_buffer);
+        game_update_and_render(&new_input, &mut buffer, &mut sound_buffer);
 
         // DirectSound output test
         if is_sound_valid {
-            win32_fill_sound_buffer(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
+            win32_fill_sound_buffer(
+                &mut sound_output,
+                byte_to_lock,
+                bytes_to_write,
+                &sound_buffer,
+            );
         }
 
         let dimension = win32_get_window_dimension(window);
@@ -564,6 +587,8 @@ unsafe fn run() -> Result<(), Error> {
 
         last_counter = end_counter;
         last_cycle_count = end_cycle_count;
+
+        std::mem::swap(&mut old_input, &mut new_input);
     }
 
     Ok(())
