@@ -24,7 +24,7 @@ use winapi::um::memoryapi::*;
 use winapi::um::profileapi::*;
 use winapi::um::unknwnbase::LPUNKNOWN;
 use winapi::um::wingdi::*;
-use winapi::um::winnt::{HRESULT, LARGE_INTEGER, MEM_COMMIT, MEM_RELEASE, PAGE_READWRITE};
+use winapi::um::winnt::{HRESULT, LARGE_INTEGER, MEM_COMMIT, MEM_RESERVE, MEM_RELEASE, PAGE_READWRITE};
 use winapi::um::winuser::*;
 use winapi::um::xinput::*;
 
@@ -188,7 +188,7 @@ unsafe fn win32_resize_dib_section(buffer: &mut Win32OffScreenBuffer, width: i32
     buffer.memory = VirtualAlloc(
         null_mut(),
         bitmap_memory_size as usize,
-        MEM_COMMIT,
+        MEM_RESERVE | MEM_COMMIT,
         PAGE_READWRITE,
     );
     buffer.pitch = buffer.width * bytes_per_pixel;
@@ -444,9 +444,34 @@ unsafe fn run() -> Result<(), Error> {
     let samples = VirtualAlloc(
         null_mut(),
         sound_output.secondary_buffer_size as usize,
-        MEM_COMMIT,
+        MEM_RESERVE | MEM_COMMIT,
         PAGE_READWRITE,
     ) as *mut i16;
+
+    let base_address = if cfg!(feature = "internal") {
+        (2usize * 1024 * 1024 * 1024 * 1024) as LPVOID
+    } else {
+        null_mut()
+    };
+
+    println!("Base address {:p}", &*base_address);
+
+    let mut game_memory = zeroed::<GameMemory>();
+    game_memory.permanent_storage_size = 64 * 1024 * 1024;
+    game_memory.transient_storage_size = 2 * 1024 * 1024 * 1024;
+
+    let total_size = game_memory.permanent_storage_size + game_memory.permanent_storage_size;
+
+    game_memory.permanent_storage = VirtualAlloc(
+        base_address,
+        total_size,
+        MEM_RESERVE | MEM_COMMIT,
+        PAGE_READWRITE,
+    ) as *mut u8;
+
+    game_memory.transient_storage = game_memory.permanent_storage.add(game_memory.permanent_storage_size);
+
+    println!("{:p} {:p}", &*game_memory.permanent_storage, &*game_memory.transient_storage);
 
     RUNNING = true;
 
@@ -554,7 +579,7 @@ unsafe fn run() -> Result<(), Error> {
             sample_count: bytes_to_write / sound_output.bytes_per_sample,
             samples_per_second: sound_output.samples_per_second,
         };
-        game_update_and_render(&new_input, &mut buffer, &mut sound_buffer);
+        game_update_and_render(&mut game_memory, &new_input, &mut buffer, &mut sound_buffer);
 
         // DirectSound output test
         if is_sound_valid {

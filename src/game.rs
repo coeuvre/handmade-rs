@@ -1,3 +1,11 @@
+pub struct GameMemory {
+    pub is_initialized: bool,
+    pub permanent_storage_size: usize,
+    pub permanent_storage: *mut u8,
+    pub transient_storage_size: usize,
+    pub transient_storage: *mut u8,
+}
+
 pub struct GameOffScreenBuffer {
     pub memory: *mut u8,
     pub width: i32,
@@ -43,33 +51,39 @@ pub struct GameInput {
     pub controllers: [GameControllerInput; 4],
 }
 
+struct GameState {
+    blue_offset: i32,
+    green_offset: i32,
+    tone_hz: u32,
+}
+
 pub fn game_update_and_render(
+    memory: &mut GameMemory,
     input: &GameInput,
     buffer: &mut GameOffScreenBuffer,
     sound_buffer: &mut GameSoundOutputBuffer,
 ) {
-    static mut BLUE_OFFSET: i32 = 0;
-    static mut GREEN_OFFSET: i32 = 0;
-    static mut TONE_HZ: u32 = 256;
+    let game_state = unsafe { &mut *(memory.permanent_storage as *mut GameState) };
+    if !memory.is_initialized {
+        game_state.tone_hz = 256;
 
-    unsafe { game_output_sound(sound_buffer, TONE_HZ); }
+        memory.is_initialized = true;
+    }
+
+    game_output_sound(sound_buffer, game_state.tone_hz);
 
     let input0 = &input.controllers[0];
 
     if input0.is_analog {
-        unsafe {
-            BLUE_OFFSET += (4.0 * input0.end_x) as i32;
-            TONE_HZ = 256u32.overflowing_add((128.0 * input0.end_y) as u32).0;
-        }
+        game_state.blue_offset += (4.0 * input0.end_x) as i32;
+        game_state.tone_hz = 256u32.overflowing_add((128.0 * input0.end_y) as u32).0;
     }
 
     if input0.down.ended_down {
-        unsafe { GREEN_OFFSET += 1; }
+        game_state.green_offset += 1;
     }
 
-    unsafe {
-        render_weird_gradient(buffer, BLUE_OFFSET, GREEN_OFFSET);
-    }
+    render_weird_gradient(buffer, game_state.blue_offset, game_state.green_offset);
 }
 
 fn render_weird_gradient(buffer: &mut GameOffScreenBuffer, x_offset: i32, y_offset: i32) {

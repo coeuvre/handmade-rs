@@ -3,6 +3,9 @@ name = "handmade"
 version = "0.1.0"
 authors = ["coeuvre"]
 
+[features]
+internal = []
+
 [dependencies]
 
 [target.'cfg(windows)'.dependencies.winapi]
