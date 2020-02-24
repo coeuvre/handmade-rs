@@ -75,5 +75,5 @@ pub unsafe extern "C" fn game_update_and_render(
         memory.is_initialized = 1;
     }
 
-    game_state.update_and_render(&* input, &mut *offscreen_buffer, &mut *sound_buffer);
+    game_state.update_and_render(&*input, &mut *offscreen_buffer, &mut *sound_buffer);
 }

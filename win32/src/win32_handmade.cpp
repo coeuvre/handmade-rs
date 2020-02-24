@@ -1,16 +1,58 @@
+#include "handmade.h"
+
 #include <Windows.h>
 #include <Xinput.h>
 #include <dsound.h>
 
-#include <stdio.h>
-#include <stdint.h>
+static DebugReadFileResult debug_platform_read_entire_file(char *filename) {
+    DebugReadFileResult result = {};
 
-#include "handmade.h"
+    HANDLE file = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_ALWAYS, 0, 0);
+    if (file != INVALID_HANDLE_VALUE) {
+        LARGE_INTEGER file_size;
+        if (GetFileSizeEx(file, &file_size)) {            
+            DWORD file_size32 = safe_truncate_uint64(file_size.QuadPart);
+            result.contents = VirtualAlloc(0, file_size.QuadPart, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            if (result.contents) {
+                DWORD bytes_read;
+                if (ReadFile(file, result.contents, file_size32, &bytes_read, 0) && (file_size32 == bytes_read)) {
+                    result.content_size = file_size32;
+                } else {
+                    debug_platform_free_file_memory(result.contents);
+                    result.contents = 0;
+                }
+            }
+        }
+        CloseHandle(file);
+    }
+    
+    return result;
+}
 
-#define KILOBYTES(value) ((value) * 1024LL)
-#define MEGABYTES(value) (KILOBYTES(value) * 1024LL)
-#define GIGABYTES(value) (MEGABYTES(value) * 1024LL)
-#define TERABYTES(value) (GIGABYTES(value) * 1024LL)
+static void debug_platform_free_file_memory(void *memory) {
+    if (memory) {
+        VirtualFree(memory, 0, MEM_RELEASE);
+    }
+}
+
+static int debug_platform_write_entire_file(char *filename, uint32_t memory_size, void *memory) {
+    int result = 0;
+
+    HANDLE file = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
+    if (file != INVALID_HANDLE_VALUE) {
+
+        DWORD bytes_written;
+        if (WriteFile(file, memory, memory_size, &bytes_written, 0)) {
+            result = bytes_written == memory_size;
+        } else {
+        }
+
+        CloseHandle(file);
+    }
+    
+    return result;
+}
+
 
 bool RUNNING;
 
@@ -375,7 +417,7 @@ static void win32_fill_sound_buffer(
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) {
     LARGE_INTEGER perf_count_frequency_result;
-    QueryPerformanceCounter(&perf_count_frequency_result);
+    QueryPerformanceFrequency(&perf_count_frequency_result);
     LONGLONG perf_count_frequency = perf_count_frequency_result.QuadPart;
 
     win32_load_xinput();
@@ -396,11 +438,11 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
     }
 
     HWND window = CreateWindowEx(
-            0, class_name, "Handmade Hero",
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-            CW_USEDEFAULT, CW_USEDEFAULT,
-            CW_USEDEFAULT, CW_USEDEFAULT,
-            0, 0, instance, 0
+        0, class_name, "Handmade Hero",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        0, 0, instance, 0
     );
     if (!window) {
         return -1;
@@ -435,10 +477,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
     game_memory.transient_storage_size = MEGABYTES(256);
     size_t total_size = game_memory.permanent_storage_size + game_memory.transient_storage_size;
     game_memory.permanent_storage = VirtualAlloc(
-            base_address,
-            total_size,
-            MEM_RESERVE | MEM_COMMIT,
-            PAGE_READWRITE
+        base_address,
+        total_size,
+        MEM_RESERVE | MEM_COMMIT,
+        PAGE_READWRITE
     );
     game_memory.transient_storage = ((char *) game_memory.permanent_storage) + game_memory.permanent_storage_size;
 
@@ -564,10 +606,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
 
         int cycles_elapsed = (int) (end_cycle_count - last_cycle_count);
         int counter_elapsed = (int) (end_counter.QuadPart - last_counter.QuadPart);
-        int ms_per_frame = (int) (counter_elapsed * 1000 / perf_count_frequency);
-        int fps = (int) (perf_count_frequency / counter_elapsed);
+        float ms_per_frame = (counter_elapsed * 1000.0f / (float)perf_count_frequency);
+        float fps = (float) perf_count_frequency / (float) counter_elapsed;
         char buf[1024];
-        sprintf(buf, "%dms/f, %df/s, %dc/f", ms_per_frame, fps, cycles_elapsed);
+        sprintf(buf, "%fms/f, %ff/s, %dc/f\n", ms_per_frame, fps, cycles_elapsed);
         OutputDebugString(buf);
 
         last_counter = end_counter;

@@ -19,8 +19,6 @@ impl GameState {
         offscreen_buffer: &mut GameOffscreenBuffer,
         sound_buffer: &mut GameSoundBuffer,
     ) {
-        game_output_sound(sound_buffer, self.tone_hz);
-
         let input0 = &input.controllers[0];
 
         if input0.is_analog == 1 {
@@ -31,7 +29,8 @@ impl GameState {
         if input0.down.ended_down == 1 {
             self.green_offset += 1;
         }
-
+        
+        game_output_sound(sound_buffer, self.tone_hz);
         render_weird_gradient(offscreen_buffer, self.blue_offset, self.green_offset);
     }
 }

@@ -6,7 +6,4 @@ authors = ["coeuvre"]
 [lib]
 crate-type = ["dylib"]
 
-[profile.release]
-debug = true
-
 [dependencies]

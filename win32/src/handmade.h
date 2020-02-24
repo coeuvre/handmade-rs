@@ -1,8 +1,39 @@
 #ifndef HANDMADE_H
 #define HANDMADE_H
 
+#include <stdint.h>
+#include <stdio.h>
+#include <assert.h>
+
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#define ASSERT(expr) assert(expr)
+#define ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
+
+#define KILOBYTES(value) ((value) * 1024LL)
+#define MEGABYTES(value) (KILOBYTES(value) * 1024LL)
+#define GIGABYTES(value) (MEGABYTES(value) * 1024LL)
+#define TERABYTES(value) (GIGABYTES(value) * 1024LL)
+
+
+inline uint32_t
+safe_truncate_uint64(uint64_t value) {
+    ASSERT(value <= 0xFFFFFFFF);
+    return (uint32_t) value;
+}
+
+#ifdef HANDMADE_INTERNAL
+typedef struct DebugReadFileResult {
+    uint32_t content_size;
+    void *contents;
+} DebugReadFileResult;
+
+DebugReadFileResult debug_platform_read_entire_file(char *filename);
+void debug_platform_free_file_memory(void *memory);
+
+int debug_platform_write_entire_file(char *filename, uint32_t memory_size, void *memory);
 #endif
 
 typedef struct GameMemory {
@@ -58,9 +89,6 @@ typedef struct GameControllerInput {
 typedef struct GameInput {
     GameControllerInput controllers[4];
 } GameInput;
-
-#define ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
-
 
 void game_update_and_render(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer, GameSoundBuffer *sound_buffer);
 
