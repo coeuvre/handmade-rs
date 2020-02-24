@@ -78,12 +78,18 @@ typedef struct GameControllerInput {
     float end_x;
     float end_y;
 
-    GameButtonState up;
-    GameButtonState down;
-    GameButtonState left;
-    GameButtonState right;
-    GameButtonState left_shoulder;
-    GameButtonState right_shoulder;
+    union {
+        GameButtonState buttons[6];
+        struct {
+            GameButtonState up;
+            GameButtonState down;
+            GameButtonState left;
+            GameButtonState right;
+            GameButtonState left_shoulder;
+            GameButtonState right_shoulder;
+        };
+    };
+
 } GameControllerInput;
 
 typedef struct GameInput {

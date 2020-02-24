@@ -4,7 +4,7 @@
 #include <Xinput.h>
 #include <dsound.h>
 
-static DebugReadFileResult debug_platform_read_entire_file(char *filename) {
+DebugReadFileResult debug_platform_read_entire_file(char *filename) {
     DebugReadFileResult result = {};
 
     HANDLE file = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_ALWAYS, 0, 0);
@@ -29,13 +29,13 @@ static DebugReadFileResult debug_platform_read_entire_file(char *filename) {
     return result;
 }
 
-static void debug_platform_free_file_memory(void *memory) {
+void debug_platform_free_file_memory(void *memory) {
     if (memory) {
         VirtualFree(memory, 0, MEM_RELEASE);
     }
 }
 
-static int debug_platform_write_entire_file(char *filename, uint32_t memory_size, void *memory) {
+int debug_platform_write_entire_file(char *filename, uint32_t memory_size, void *memory) {
     int result = 0;
 
     HANDLE file = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
@@ -124,6 +124,14 @@ static void win32_process_xinput_digitial_button(
     }    
 }
 
+static void win32_process_keyboard_message(
+    GameButtonState *new_state,
+    int is_down
+) {
+    new_state->ended_down = is_down;
+    ++new_state->half_transition_count;
+}
+
 struct Win32WindowDimension {
     int width;
     int height;
@@ -207,59 +215,7 @@ LRESULT CALLBACK win32_main_window_proc(HWND window, UINT message, WPARAM wparam
         case WM_SYSKEYUP:
         case WM_KEYDOWN:
         case WM_KEYUP: {
-            int vk_code = (int) wparam;
-            int was_down = (lparam & (1 << 30)) != 0;
-            int is_down = (lparam & (1 << 31)) != 0;
-            if (was_down != is_down) {
-                switch ((char) vk_code) {
-                    case 'W': {
-                        break;
-                    }
-                    case 'A': {
-                        break;
-                    }
-                    case 'S': {
-                        break;
-                    }
-                    case 'D': {
-                        break;
-                    }
-                    case 'Q': {
-                        break;
-                    }
-                    case 'E': {
-                        break;
-                    }
-                    default: {
-                        switch (vk_code) {
-                        case VK_UP: {
-                            break;
-                        }
-                        case VK_LEFT: {
-                            break;
-                        }
-                        case VK_DOWN: {
-                            break;
-                        }
-                        case VK_RIGHT: {
-                            break;
-                        }
-                        case VK_ESCAPE: {
-                            break;
-                        }
-                        case VK_SPACE: {
-                            break;
-                        }
-                        default: {}
-                        }
-                    }
-                }
-            }
-
-            int alt_key_was_down = lparam & (1 << 29);
-            if (is_down && (vk_code == VK_ESCAPE || alt_key_was_down != 0 && vk_code == VK_F4)) {
-                RUNNING = false;
-            }
+            ASSERT(!"Keyboard input came in through a non-dispatch message!");
             break;
         }
         case WM_PAINT: {
@@ -414,6 +370,92 @@ static void win32_fill_sound_buffer(
     }
 }
 
+static void win32_process_pending_messages(GameControllerInput *keyboard_controller) {
+    MSG message;
+    while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
+        switch (message.message) {
+            case WM_QUIT: {
+                RUNNING = false;
+                break;
+            }
+            case WM_SYSKEYDOWN:
+            case WM_SYSKEYUP:
+            case WM_KEYDOWN:
+            case WM_KEYUP: {
+                int vk_code = (int) message.wParam;
+                int was_down = (message.lParam & (1 << 30)) != 0;
+                int is_down = (message.lParam & (1 << 31)) == 0;
+                if (was_down != is_down) {
+                    switch ((char) vk_code) {
+                        case 'W': {
+                            win32_process_keyboard_message(&keyboard_controller->up, is_down);
+                            break;
+                        }
+                        case 'A': {
+                            win32_process_keyboard_message( &keyboard_controller->left, is_down);
+                            break;
+                        }
+                        case 'S': {
+                            win32_process_keyboard_message(&keyboard_controller->down, is_down);
+                            break;
+                        }
+                        case 'D': {
+                            win32_process_keyboard_message(&keyboard_controller->right, is_down);
+                            break;
+                        }
+                        case 'Q': {
+                            win32_process_keyboard_message(&keyboard_controller->left_shoulder, is_down);                                
+                            break;
+                        }
+                        case 'E': {
+                            win32_process_keyboard_message(&keyboard_controller->right_shoulder, is_down);
+                            break;
+                        }
+                        default: {
+                            switch (vk_code) {
+                                case VK_UP: {
+                                    win32_process_keyboard_message(&keyboard_controller->up, is_down);
+                                    break;
+                                }
+                                case VK_LEFT: {
+                                    win32_process_keyboard_message( &keyboard_controller->left, is_down);
+                                    break;
+                                }
+                                case VK_DOWN: {
+                                    win32_process_keyboard_message(&keyboard_controller->down, is_down);
+                                    break;
+                                }
+                                case VK_RIGHT: {
+                                    win32_process_keyboard_message(&keyboard_controller->right, is_down);
+                                    break;
+                                }
+                                case VK_ESCAPE: {
+                                    RUNNING = false;
+                                    break;
+                                }
+                                case VK_SPACE: {
+                                    break;
+                                }
+                                default: {}
+                            }
+                        }
+                    }
+                }
+
+                int alt_key_was_down = message.lParam & (1 << 29);
+                if (is_down && (vk_code == VK_ESCAPE || alt_key_was_down != 0 && vk_code == VK_F4)) {
+                    RUNNING = false;
+                }
+                break;
+            }
+            default:  {
+                TranslateMessage(&message);
+                DispatchMessage(&message);
+            }
+        }
+    }
+}
+
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) {
     LARGE_INTEGER perf_count_frequency_result;
@@ -494,15 +536,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
     QueryPerformanceCounter(&last_counter);
     DWORD64 last_cycle_count = __rdtsc();
     while (RUNNING) {
-        MSG message;
-        while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
-            if (message.message == WM_QUIT) {
-                RUNNING = false;
-            }
+        GameControllerInput *keyboard_controller = &new_input->controllers[0];
+        *keyboard_controller = {};
 
-            TranslateMessage(&message);
-            DispatchMessage(&message);
-        }
+        win32_process_pending_messages(keyboard_controller);
 
         // Note: Input
         DWORD max_controller_count = XUSER_MAX_COUNT;
