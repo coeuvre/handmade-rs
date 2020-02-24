@@ -1,0 +1,12 @@
+[package]
+name = "handmade"
+version = "0.1.0"
+authors = ["coeuvre"]
+
+[lib]
+crate-type = ["dylib"]
+
+[profile.release]
+debug = true
+
+[dependencies]
