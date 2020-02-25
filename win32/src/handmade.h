@@ -64,37 +64,44 @@ typedef struct GameButtonState {
 } GameButtonState;
 
 typedef struct GameControllerInput {
+    int is_connected;
     int is_analog;
 
-    float start_x;
-    float start_y;
-
-    float min_x;
-    float min_y;
-
-    float max_x;
-    float max_y;
-
-    float end_x;
-    float end_y;
+    float stick_average_x;
+    float stick_average_y;
 
     union {
-        GameButtonState buttons[6];
+        GameButtonState buttons[12];
         struct {
-            GameButtonState up;
-            GameButtonState down;
-            GameButtonState left;
-            GameButtonState right;
+            GameButtonState move_up;
+            GameButtonState move_down;
+            GameButtonState move_left;
+            GameButtonState move_right;
+
+            GameButtonState action_up;
+            GameButtonState action_down;
+            GameButtonState action_left;
+            GameButtonState action_right;
+
             GameButtonState left_shoulder;
             GameButtonState right_shoulder;
+
+            GameButtonState back;
+            GameButtonState start;
         };
     };
 
 } GameControllerInput;
 
 typedef struct GameInput {
-    GameControllerInput controllers[4];
+    GameControllerInput controllers[5];
 } GameInput;
+
+inline GameControllerInput *GetController(GameInput *input, int index) {
+    ASSERT(index < ARRAY_COUNT(input->controllers));
+    GameControllerInput *controller = &input->controllers[index];
+    return controller;
+}
 
 void game_update_and_render(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer, GameSoundBuffer *sound_buffer);
 

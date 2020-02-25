@@ -19,15 +19,22 @@ impl GameState {
         offscreen_buffer: &mut GameOffscreenBuffer,
         sound_buffer: &mut GameSoundBuffer,
     ) {
-        let input0 = &input.controllers[0];
-
-        if input0.is_analog == 1 {
-            self.blue_offset += (4.0 * input0.end_x) as i32;
-            self.tone_hz = 256i32.overflowing_add((128.0 * input0.end_y) as i32).0;
-        }
-
-        if input0.down.ended_down == 1 {
-            self.green_offset += 1;
+        for controller in input.controllers.iter() {
+            if controller.is_analog == 1 {
+                self.blue_offset += (4.0 * controller.stick_average_x) as i32;
+                self.tone_hz = 256i32.overflowing_add((128.0 * controller.stick_average_y) as i32).0;
+            } else {
+                if controller.move_left.ended_down == 1 {
+                    self.blue_offset -= 1;
+                }
+                if controller.move_right.ended_down == 1 {
+                    self.blue_offset += 1;
+                }
+            }
+    
+            if controller.action_down.ended_down == 1 {
+                self.green_offset += 1;
+            }
         }
         
         game_output_sound(sound_buffer, self.tone_hz);

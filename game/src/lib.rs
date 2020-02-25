@@ -34,26 +34,26 @@ pub struct GameButtonState {
 
 #[repr(C)]
 pub struct GameControllerInput {
+    pub is_connected: c_int,
     pub is_analog: c_int,
+    pub stick_average_x: f32,
+    pub stick_average_y: f32,
 
-    pub start_x: f32,
-    pub start_y: f32,
+    pub move_up: GameButtonState,
+    pub move_down: GameButtonState,
+    pub move_left: GameButtonState,
+    pub move_right: GameButtonState,
 
-    pub min_x: f32,
-    pub min_y: f32,
-
-    pub max_x: f32,
-    pub max_y: f32,
-
-    pub end_x: f32,
-    pub end_y: f32,
-
-    pub up: GameButtonState,
-    pub down: GameButtonState,
-    pub left: GameButtonState,
-    pub right: GameButtonState,
+    pub action_up: GameButtonState,
+    pub action_down: GameButtonState,
+    pub action_left: GameButtonState,
+    pub action_right: GameButtonState,
+    
     pub left_shoulder: GameButtonState,
     pub right_shoulder: GameButtonState,
+
+    pub back: GameButtonState,
+    pub start: GameButtonState,
 }
 
 #[repr(C)]
