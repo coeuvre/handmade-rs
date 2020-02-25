@@ -11,7 +11,6 @@ if not exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\A
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
 
-cmake --build build\ --config Debug
+cmake --build build\
 
-copy target\debug\handmade.dll build\win32\
-
+copyres

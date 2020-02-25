@@ -9,4 +9,5 @@ target_compile_definitions(win32_handmade PRIVATE
 target_link_options(win32_handmade PRIVATE
         /opt:ref)
 target_link_libraries(win32_handmade
+        winmm
         debug ${CMAKE_SOURCE_DIR}/target/debug/handmade.dll.lib)

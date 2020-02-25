@@ -10,9 +10,9 @@ DebugReadFileResult debug_platform_read_entire_file(char *filename) {
     HANDLE file = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_ALWAYS, 0, 0);
     if (file != INVALID_HANDLE_VALUE) {
         LARGE_INTEGER file_size;
-        if (GetFileSizeEx(file, &file_size)) {            
+        if (GetFileSizeEx(file, &file_size)) {
             DWORD file_size32 = safe_truncate_uint64(file_size.QuadPart);
-            result.contents = VirtualAlloc(0, file_size.QuadPart, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            result.contents = VirtualAlloc(0, file_size32, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             if (result.contents) {
                 DWORD bytes_read;
                 if (ReadFile(file, result.contents, file_size32, &bytes_read, 0) && (file_size32 == bytes_read)) {
@@ -25,7 +25,7 @@ DebugReadFileResult debug_platform_read_entire_file(char *filename) {
         }
         CloseHandle(file);
     }
-    
+
     return result;
 }
 
@@ -49,7 +49,7 @@ int debug_platform_write_entire_file(char *filename, uint32_t memory_size, void 
 
         CloseHandle(file);
     }
-    
+
     return result;
 }
 
@@ -111,17 +111,17 @@ win32_load_xinput() {
 }
 
 static void win32_process_xinput_digitial_button(
-    USHORT x_input_button_state, 
-    GameButtonState *old_state, 
-    USHORT button_bit, 
+    USHORT x_input_button_state,
+    GameButtonState *old_state,
+    USHORT button_bit,
     GameButtonState *new_state
 ) {
     new_state->ended_down = (x_input_button_state & button_bit) == button_bit;
     if (old_state->ended_down == new_state->ended_down) {
         new_state->half_transition_count = 1;
-    } else { 
+    } else {
         new_state->half_transition_count = 0;
-    }    
+    }
 }
 
 static void win32_process_keyboard_message(
@@ -336,7 +336,7 @@ static void win32_clear_buffer(Win32SoundOutput *sound_output) {
 
 static void win32_fill_sound_buffer(
     Win32SoundOutput *sound_output,
-    int bytes_to_lock, 
+    int bytes_to_lock,
     int bytes_to_write,
     GameSoundBuffer *source
 ) {
@@ -405,7 +405,7 @@ static void win32_process_pending_messages(GameControllerInput *keyboard_control
                             break;
                         }
                         case 'Q': {
-                            win32_process_keyboard_message(&keyboard_controller->left_shoulder, is_down);                                
+                            win32_process_keyboard_message(&keyboard_controller->left_shoulder, is_down);
                             break;
                         }
                         case 'E': {
@@ -444,8 +444,8 @@ static void win32_process_pending_messages(GameControllerInput *keyboard_control
                     }
                 }
 
-                int alt_key_was_down = message.lParam & (1 << 29);
-                if (is_down && (vk_code == VK_ESCAPE || alt_key_was_down != 0 && vk_code == VK_F4)) {
+                int alt_key_was_down = (int)(message.lParam & (1 << 29));
+                if (is_down && (vk_code == VK_ESCAPE || (alt_key_was_down != 0 && vk_code == VK_F4))) {
                     RUNNING = false;
                 }
                 break;
@@ -468,11 +468,26 @@ static float win32_process_x_input_stick_value(SHORT stick_value, SHORT dead_zon
     return result;
 }
 
+static LONGLONG PERF_COUNT_FREQUENCY;
+
+inline LARGE_INTEGER win32_get_wall_clock() {
+    LARGE_INTEGER result;
+    QueryPerformanceCounter(&result);
+    return result;
+}
+
+inline float win32_get_seconds_elapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
+    return (float) (end.QuadPart - start.QuadPart) / (float) PERF_COUNT_FREQUENCY;
+}
+
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) {
     LARGE_INTEGER perf_count_frequency_result;
     QueryPerformanceFrequency(&perf_count_frequency_result);
-    LONGLONG perf_count_frequency = perf_count_frequency_result.QuadPart;
+    PERF_COUNT_FREQUENCY = perf_count_frequency_result.QuadPart;
+
+    UINT desired_scheduler_ms = 1;
+    int sleep_is_granular = timeBeginPeriod(desired_scheduler_ms) == TIMERR_NOERROR;
 
     win32_load_xinput();
 
@@ -490,6 +505,11 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
     if (!RegisterClass(&window_class)) {
         return -1;
     }
+
+    // TODO: How do we reliably query on this on Windows?
+    int monitor_refresh_hz = 60;
+    int game_update_hz = monitor_refresh_hz / 2;
+    float target_seconds_per_frame = 1.0f / (float)game_update_hz;
 
     HWND window = CreateWindowEx(
         0, class_name, "Handmade Hero",
@@ -516,7 +536,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
     SECONDARY_BUFFER->Play(0, 0, DSBPLAY_LOOPING);
 
     void *samples = VirtualAlloc(
-        0, sound_output.secondary_buffer_size, 
+        0, sound_output.secondary_buffer_size,
         MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE
     );
 
@@ -544,8 +564,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
     GameInput *new_input = &input[0];
     GameInput *old_input = &input[1];
 
-    LARGE_INTEGER last_counter;
-    QueryPerformanceCounter(&last_counter);
+    LARGE_INTEGER last_counter = win32_get_wall_clock();
+
     DWORD64 last_cycle_count = __rdtsc();
     while (RUNNING) {
         GameControllerInput *old_keyboard_controller = GetController(old_input, 0);
@@ -572,8 +592,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
             XINPUT_STATE controller_state;
             if (XInputGetState(x_input_controller_index, &controller_state) == ERROR_SUCCESS) {
                 new_controller->is_connected = true;
-                XINPUT_GAMEPAD *pad = &controller_state.Gamepad;                
-                
+                XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
+
                 new_controller->is_analog = 1;
                 new_controller->stick_average_x = win32_process_x_input_stick_value(pad->sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
                 new_controller->stick_average_y = win32_process_x_input_stick_value(pad->sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
@@ -582,7 +602,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
                     new_controller->is_analog = true;
                 }
 
-                if (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP) {                    
+                if (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP) {
                     new_controller->stick_average_y = 1.0;
                     new_controller->is_analog = false;
                 }
@@ -601,19 +621,19 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
 
                 float threshold = 0.5f;
                 win32_process_xinput_digitial_button(
-                    (new_controller->stick_average_x < -threshold) ? 1 : 0, 
+                    (new_controller->stick_average_x < -threshold) ? 1 : 0,
                     &old_controller->move_left, 1, &new_controller->move_left
                 );
                 win32_process_xinput_digitial_button(
-                    (new_controller->stick_average_x > threshold) ? 1 : 0, 
+                    (new_controller->stick_average_x > threshold) ? 1 : 0,
                     &old_controller->move_right, 1, &new_controller->move_right
                 );
                 win32_process_xinput_digitial_button(
-                    (new_controller->stick_average_y < -threshold) ? 1 : 0, 
+                    (new_controller->stick_average_y < -threshold) ? 1 : 0,
                     &old_controller->move_down, 1, &new_controller->move_down
                 );
                 win32_process_xinput_digitial_button(
-                    (new_controller->stick_average_y > threshold) ? 1 : 0, 
+                    (new_controller->stick_average_y > threshold) ? 1 : 0,
                     &old_controller->move_up, 1, &new_controller->move_up
                 );
 
@@ -640,14 +660,14 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
         if (SUCCEEDED(SECONDARY_BUFFER->GetCurrentPosition(&play_cursor, &write_cursor))) {
             is_sound_valid = true;
 
-            bytes_to_lock = (sound_output.running_sample_index * sound_output.bytes_per_sample)
-                % sound_output.secondary_buffer_size;
-            target_cursor = (play_cursor
+            bytes_to_lock = (int)((sound_output.running_sample_index * sound_output.bytes_per_sample)
+                % sound_output.secondary_buffer_size);
+            target_cursor = (int)((play_cursor
                 + sound_output.latency_sample_count * sound_output.bytes_per_sample)
-                % sound_output.secondary_buffer_size;
+                % sound_output.secondary_buffer_size);
 
             if (bytes_to_lock > target_cursor) {
-                bytes_to_write = (sound_output.secondary_buffer_size - bytes_to_lock) + target_cursor;
+                bytes_to_write = (int)((sound_output.secondary_buffer_size - bytes_to_lock) + target_cursor);
             } else {
                 bytes_to_write = target_cursor - bytes_to_lock;
             }
@@ -670,6 +690,25 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
             win32_fill_sound_buffer(&sound_output, bytes_to_lock, bytes_to_write, &sound_buffer);
         }
 
+        LARGE_INTEGER work_counter = win32_get_wall_clock();
+        float work_seconds_elapsed = win32_get_seconds_elapsed(last_counter, work_counter);
+        float seconds_elapsed_for_frame = work_seconds_elapsed;
+        if (seconds_elapsed_for_frame < target_seconds_per_frame) {
+            if (sleep_is_granular) {
+                DWORD ms = (DWORD)(1000.0f * (target_seconds_per_frame - seconds_elapsed_for_frame));
+                if (ms > 0) {
+                    Sleep(ms);
+                }
+            }
+            ASSERT(win32_get_seconds_elapsed(last_counter, win32_get_wall_clock()) < target_cursor);
+            while (seconds_elapsed_for_frame < target_seconds_per_frame) {
+                seconds_elapsed_for_frame = win32_get_seconds_elapsed(last_counter, win32_get_wall_clock());
+            }
+        } else {
+            // TODO: MISSED FRAME RATE
+            // TODO: Logging
+        }
+
         HDC device_context = GetDC(window);
         Win32WindowDimension dimension = win32_get_window_dimension(window);
         win32_display_buffer_in_window(
@@ -679,24 +718,22 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
             &BACK_BUFFER
         );
 
-        DWORD64 end_cycle_count = __rdtsc();
-        LARGE_INTEGER end_counter;
-        QueryPerformanceCounter(&end_counter);
-
-        int cycles_elapsed = (int) (end_cycle_count - last_cycle_count);
-        int counter_elapsed = (int) (end_counter.QuadPart - last_counter.QuadPart);
-        float ms_per_frame = (counter_elapsed * 1000.0f / (float)perf_count_frequency);
-        float fps = (float) perf_count_frequency / (float) counter_elapsed;
-        char buf[1024];
-        sprintf(buf, "%fms/f, %ff/s, %dc/f\n", ms_per_frame, fps, cycles_elapsed);
-        OutputDebugString(buf);
-
-        last_counter = end_counter;
-        last_cycle_count = end_cycle_count;
-
         GameInput *tmp_input = new_input;
         new_input = old_input;
         old_input = tmp_input;
+
+        LARGE_INTEGER end_counter = win32_get_wall_clock();
+        float ms_per_frame = 1000.0f * win32_get_seconds_elapsed(last_counter, end_counter);
+        last_counter = end_counter;
+
+        DWORD64 end_cycle_count = __rdtsc();
+        int cycles_elapsed = (int) (end_cycle_count - last_cycle_count);
+        last_cycle_count = end_cycle_count;
+
+        float fps = 0.0; //(float) PERF_COUNT_FREQUENCY / (float) counter_elapsed;
+        char buf[1024];
+        sprintf(buf, "%fms/f, %ff/s, %dc/f\n", ms_per_frame, fps, cycles_elapsed);
+        OutputDebugString(buf);
     }
 
     return 0;
