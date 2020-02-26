@@ -53,8 +53,8 @@ typedef struct GameOffscreenBuffer {
 
 typedef struct GameSoundBuffer {
     void *samples;
-    int sample_count;
-    int samples_per_second;
+    uint32_t sample_count;
+    uint32_t samples_per_second;
 } GameSoundBuffer;
 
 
@@ -103,7 +103,8 @@ inline GameControllerInput *GetController(GameInput *input, int index) {
     return controller;
 }
 
-void game_update_and_render(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer, GameSoundBuffer *sound_buffer);
+void game_update_and_render(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer);
+void game_get_sound_samples(GameMemory *memory, GameSoundBuffer *sound_buffer);
 
 #ifdef __cplusplus
 }

@@ -22,8 +22,8 @@ pub struct GameOffscreenBuffer {
 #[repr(C)]
 pub struct GameSoundBuffer {
     pub samples: *mut c_void,
-    pub sample_count: c_int,
-    pub samples_per_second: c_int,
+    pub sample_count: u32,
+    pub samples_per_second: u32,
 }
 
 #[repr(C)]
@@ -65,8 +65,7 @@ pub struct GameInput {
 pub unsafe extern "C" fn game_update_and_render(
     memory: *mut GameMemory,
     input: *const GameInput,
-    offscreen_buffer: *mut GameOffscreenBuffer,
-    sound_buffer: *mut GameSoundBuffer,
+    offscreen_buffer: *mut GameOffscreenBuffer
 ) {
     let memory = &mut *memory;
     let game_state = &mut *(memory.permanent_storage as *mut game::GameState);
@@ -75,5 +74,16 @@ pub unsafe extern "C" fn game_update_and_render(
         memory.is_initialized = 1;
     }
 
-    game_state.update_and_render(&*input, &mut *offscreen_buffer, &mut *sound_buffer);
+    game_state.update_and_render(&*input, &mut *offscreen_buffer);
+}
+
+
+#[no_mangle]
+pub unsafe extern "C" fn game_get_sound_samples(
+    memory: *mut GameMemory,
+    sound_buffer: *mut GameSoundBuffer
+) {
+    let memory = &mut *memory;
+    let game_state = &mut *(memory.permanent_storage as *mut game::GameState);
+    game_state.get_sound_samples(&mut *sound_buffer)
 }
