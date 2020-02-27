@@ -4,7 +4,13 @@
 #include <Xinput.h>
 #include <dsound.h>
 
-DebugReadFileResult debug_platform_read_entire_file(char *filename) {
+DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory) {
+    if (memory) {
+        VirtualFree(memory, 0, MEM_RELEASE);
+    }
+}
+
+DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file) {
     DebugReadFileResult result = {};
 
     HANDLE file = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_ALWAYS, 0, 0);
@@ -29,13 +35,7 @@ DebugReadFileResult debug_platform_read_entire_file(char *filename) {
     return result;
 }
 
-void debug_platform_free_file_memory(void *memory) {
-    if (memory) {
-        VirtualFree(memory, 0, MEM_RELEASE);
-    }
-}
-
-int debug_platform_write_entire_file(char *filename, uint32_t memory_size, void *memory) {
+DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file) {
     int result = 0;
 
     HANDLE file = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
@@ -80,6 +80,51 @@ X_INPUT_SET_STATE(X_INPUT_SET_STATE_STUB) {
 
 static XInputSetStateFn *X_INPUT_SET_STATE_ = X_INPUT_SET_STATE_STUB;
 #define XInputSetState X_INPUT_SET_STATE_
+
+GAME_UPDATE_AND_RENDER(game_update_and_render_stub) {
+
+}
+
+GAME_GET_SOUND_SAMPLES(game_get_sound_samples_stub) {
+
+}
+
+struct Win32GameCode {
+    HMODULE library;
+    GameUpdateAndRender *game_update_and_render;
+    GameGetSoundSamples *game_get_sound_samples;
+
+    int is_valid;
+};
+
+static Win32GameCode win32_load_game_code() {
+    Win32GameCode result = {};
+    CopyFile("handmade.dll", "handmade_temp.dll", FALSE);
+    result.library = LoadLibrary("handmade_temp.dll");
+    if (result.library) {
+        result.game_update_and_render = (GameUpdateAndRender *) GetProcAddress(result.library, "game_update_and_render");
+        result.game_get_sound_samples = (GameGetSoundSamples *) GetProcAddress(result.library, "game_get_sound_samples");
+
+        result.is_valid = result.game_update_and_render && result.game_get_sound_samples;
+    }
+    if (!result.is_valid) {
+        result.game_update_and_render = game_update_and_render_stub;
+        result.game_get_sound_samples = game_get_sound_samples_stub;
+    }
+
+    return result;
+}
+
+static void win32_unload_game_code(Win32GameCode *game_code) {
+    if (game_code->library) {
+        FreeLibrary(game_code->library);
+        game_code->library = 0;
+    }
+
+    game_code->is_valid = 0;
+    game_code->game_update_and_render = game_update_and_render_stub;
+    game_code->game_get_sound_samples = game_get_sound_samples_stub;
+}
 
 static void
 win32_load_xinput() {
@@ -651,6 +696,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
         PAGE_READWRITE
     );
     game_memory.transient_storage = ((char *) game_memory.permanent_storage) + game_memory.permanent_storage_size;
+    game_memory.debug_platform_free_file_memory = debug_platform_free_file_memory;
+    game_memory.debug_platform_read_entire_file = debug_platform_read_entire_file;
+    game_memory.debug_platform_write_entire_file = debug_platform_write_entire_file;
 
     RUNNING = true;
 
@@ -667,7 +715,16 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
     int debug_last_marker_index = 0;
     Win32DebugTimeMarker debug_markers[game_update_hz / 2] = {};
 
+    Win32GameCode game = win32_load_game_code();
+    DWORD load_counter = 0;
+
     while (RUNNING) {
+        if (load_counter++ > 120) {
+            win32_unload_game_code(&game);
+            game = win32_load_game_code();
+            load_counter = 0;
+        }
+
         GameControllerInput *old_keyboard_controller = GetController(old_input, 0);
         GameControllerInput *new_keyboard_controller = GetController(new_input, 0);
         *new_keyboard_controller = {};
@@ -767,7 +824,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
             offscreen_buffer.height = BACK_BUFFER.height;
             offscreen_buffer.pitch = BACK_BUFFER.pitch;
 
-            game_update_and_render(&game_memory, new_input, &offscreen_buffer);
+            game.game_update_and_render(&game_memory, new_input, &offscreen_buffer);
 
             LARGE_INTEGER audio_wall_clock = win32_get_wall_clock();
             float from_begin_to_audio_seconds = win32_get_seconds_elapsed(flip_wall_clock, audio_wall_clock);
@@ -831,7 +888,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow) 
                 sound_buffer.samples = samples;
                 sound_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
                 sound_buffer.samples_per_second = sound_output.samples_per_second;
-                game_get_sound_samples(&game_memory, &sound_buffer);
+                game.game_get_sound_samples(&game_memory, &sound_buffer);
                 win32_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
             } else {
                 is_sound_valid = false;

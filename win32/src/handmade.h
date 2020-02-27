@@ -30,10 +30,14 @@ typedef struct DebugReadFileResult {
     void *contents;
 } DebugReadFileResult;
 
-DebugReadFileResult debug_platform_read_entire_file(char *filename);
-void debug_platform_free_file_memory(void *memory);
+#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) DebugReadFileResult name(char *filename)
+typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(DebugPlatformReadEntireFile);
 
-int debug_platform_write_entire_file(char *filename, uint32_t memory_size, void *memory);
+#define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
+typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(DebugPlatformFreeFileMemory);
+
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) int name(char *filename, uint32_t memory_size, void *memory)
+typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DebugPlatformWriteEntireFile);
 #endif
 
 typedef struct GameMemory {
@@ -42,6 +46,10 @@ typedef struct GameMemory {
     void *permanent_storage;
     size_t transient_storage_size;
     void *transient_storage;
+
+    DebugPlatformReadEntireFile *debug_platform_read_entire_file;
+    DebugPlatformFreeFileMemory *debug_platform_free_file_memory;
+    DebugPlatformWriteEntireFile *debug_platform_write_entire_file;
 } GameMemory;
 
 typedef struct GameOffscreenBuffer {
@@ -103,8 +111,11 @@ inline GameControllerInput *GetController(GameInput *input, int index) {
     return controller;
 }
 
-void game_update_and_render(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer);
-void game_get_sound_samples(GameMemory *memory, GameSoundBuffer *sound_buffer);
+#define GAME_UPDATE_AND_RENDER(name) void name(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer)
+typedef GAME_UPDATE_AND_RENDER(GameUpdateAndRender);
+
+#define GAME_GET_SOUND_SAMPLES(name) void name(GameMemory *memory, GameSoundBuffer *sound_buffer)
+typedef GAME_GET_SOUND_SAMPLES(GameGetSoundSamples);
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,5 @@
 use std::os::raw::{c_int, c_void};
+use game::GameState;
 
 mod game;
 
@@ -70,6 +71,7 @@ pub unsafe extern "C" fn game_update_and_render(
     let memory = &mut *memory;
     let game_state = &mut *(memory.permanent_storage as *mut game::GameState);
     if memory.is_initialized == 0 {
+        *game_state = GameState::default();
         game_state.init();
         memory.is_initialized = 1;
     }
