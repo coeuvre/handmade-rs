@@ -1,0 +1,6 @@
+[package]
+name = "software_renderer"
+version = "0.1.0"
+authors = ["coeuvre"]
+
+[dependencies]

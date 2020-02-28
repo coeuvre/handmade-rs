@@ -1,3 +1,5 @@
+use software_renderer::render_weird_gradient;
+
 use crate::GameInput;
 use crate::GameOffscreenBuffer;
 use crate::GameSoundBuffer;
@@ -53,7 +55,7 @@ impl GameState {
             self.t_jump -= 0.033;
         }
 
-        render_weird_gradient(offscreen_buffer, self.blue_offset, self.green_offset);
+        render_weird_gradient(offscreen_buffer.memory as *mut u8, offscreen_buffer.width, offscreen_buffer.height, offscreen_buffer.pitch, self.blue_offset, self.green_offset);
         self.render_player(offscreen_buffer)
     }
 
@@ -85,7 +87,7 @@ impl GameState {
     }
 
     fn render_player(&self, buffer: &mut GameOffscreenBuffer) {
-        let mut bytes = unsafe {
+        let bytes = unsafe {
             std::slice::from_raw_parts_mut(buffer.memory as *mut u8, (buffer.pitch * buffer.height) as usize)
         };
 
@@ -115,22 +117,3 @@ impl GameState {
         }
     }
 }
-
-fn render_weird_gradient(buffer: &mut GameOffscreenBuffer, x_offset: i32, y_offset: i32) {
-    let mut row = buffer.memory;
-    for y in 0..buffer.height {
-        let mut pixel = row as *mut u32;
-        for x in 0..buffer.width {
-            let b = x + x_offset;
-            let g = y + y_offset;
-            unsafe {
-                *pixel = (((g & 0xFF) << 8) | (b & 0xFF)) as u32;
-                pixel = pixel.offset(1);
-            }
-        }
-        unsafe {
-            row = row.offset(buffer.pitch as isize);
-        }
-    }
-}
-

@@ -1,2 +1,5 @@
 [workspace]
-members = ["game"]
+members = ["game", "software_renderer"]
+
+[profile.dev.package.software_renderer]
+opt-level=3

@@ -1,3 +1,5 @@
+extern crate software_renderer;
+
 use std::os::raw::{c_int, c_void};
 use game::GameState;
 

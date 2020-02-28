@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["coeuvre"]
 
 [lib]
-crate-type = ["dylib"]
+crate-type = ["cdylib"]
 
 [dependencies]
+
+[dependencies.software_renderer]
+path = "../software_renderer"
