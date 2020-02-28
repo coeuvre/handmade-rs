@@ -32,12 +32,12 @@ impl GameState {
                     self.blue_offset += 1;
                 }
             }
-    
+
             if controller.action_down.ended_down == 1 {
                 self.green_offset += 1;
             }
         }
-        
+
         render_weird_gradient(offscreen_buffer, self.blue_offset, self.green_offset);
     }
 
