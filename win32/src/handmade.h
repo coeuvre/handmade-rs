@@ -57,6 +57,7 @@ typedef struct GameOffscreenBuffer {
     int width;
     int height;
     int pitch;
+    int bytes_per_pixel;
 } GameOffscreenBuffer;
 
 typedef struct GameSoundBuffer {

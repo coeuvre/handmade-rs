@@ -1,5 +1,5 @@
 @echo off
 
-cd build\win32
-
+pushd build\win32
 win32_handmade.exe
+popd

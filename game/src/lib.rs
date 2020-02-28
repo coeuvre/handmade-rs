@@ -18,6 +18,7 @@ pub struct GameOffscreenBuffer {
     pub width: c_int,
     pub height: c_int,
     pub pitch: c_int,
+    pub bytes_per_pixel: c_int,
 }
 
 #[repr(C)]
