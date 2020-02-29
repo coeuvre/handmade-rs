@@ -62,6 +62,10 @@ pub struct GameControllerInput {
 
 #[repr(C)]
 pub struct GameInput {
+    pub mouse_buttons: [GameButtonState; 5],
+    pub mouse_x: i32,
+    pub mouse_y: i32,
+    pub mouse_z: i32,
     pub controllers: [GameControllerInput; 4],
 }
 

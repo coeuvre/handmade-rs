@@ -34,10 +34,10 @@ impl GameState {
                 self.blue_offset += (4.0 * controller.stick_average_x) as i32;
                 self.tone_hz = 512u32.overflowing_add((128.0 * controller.stick_average_y) as u32).0;
             } else {
-                if controller.move_left.ended_down == 1 {
+                if controller.move_left.ended_down != 0 {
                     self.blue_offset -= 1;
                 }
-                if controller.move_right.ended_down == 1 {
+                if controller.move_right.ended_down != 0 {
                     self.blue_offset += 1;
                 }
             }
@@ -48,7 +48,7 @@ impl GameState {
             if self.t_jump > 0.0 {
                 self.player_y -= (10.0 * self.t_jump.sin()) as i32;
             }
-            if controller.action_down.ended_down == 1 {
+            if controller.action_down.ended_down != 0 {
                 self.t_jump = 1.0;
             }
 
@@ -56,7 +56,13 @@ impl GameState {
         }
 
         render_weird_gradient(offscreen_buffer.memory as *mut u8, offscreen_buffer.width, offscreen_buffer.height, offscreen_buffer.pitch, self.blue_offset, self.green_offset);
-        self.render_player(offscreen_buffer)
+        render_player(offscreen_buffer, self.player_x, self.player_y);
+        render_player(offscreen_buffer, input.mouse_x, input.mouse_y);
+        for (index, mouse_button) in input.mouse_buttons.iter().enumerate() {
+            if mouse_button.ended_down != 0 {
+                render_player(offscreen_buffer, (10 + index * 20) as i32, 10);
+            }
+        }
     }
 
     pub fn get_sound_samples(&mut self, sound_buffer: &mut GameSoundBuffer) {
@@ -86,34 +92,35 @@ impl GameState {
         }
     }
 
-    fn render_player(&self, buffer: &mut GameOffscreenBuffer) {
-        let bytes = unsafe {
-            std::slice::from_raw_parts_mut(buffer.memory as *mut u8, (buffer.pitch * buffer.height) as usize)
-        };
+}
 
-        let mut row_opt = bytes.get_mut((self.player_x * buffer.bytes_per_pixel + self.player_y * buffer.pitch) as usize..);
+fn render_player(buffer: &mut GameOffscreenBuffer, x: i32, y: i32) {
+    let bytes = unsafe {
+        std::slice::from_raw_parts_mut(buffer.memory as *mut u8, (buffer.pitch * buffer.height) as usize)
+    };
 
-        for _ in self.player_y..self.player_y + 10 {
-            if let Some(row) = row_opt {
-                let mut pixels_opt = row.get_mut(0..);
+    let mut row_opt = bytes.get_mut((x * buffer.bytes_per_pixel + y * buffer.pitch) as usize..);
 
-                for _ in self.player_x..self.player_x + 10 {
-                    if let Some(pixels) = pixels_opt {
-                        let color = &mut pixels[0..4];
-                        color[0] = 0xFF;
-                        color[1] = 0xFF;
-                        color[2] = 0xFF;
-                        color[3] = 0xFF;
+    for _ in y..y + 10 {
+        if let Some(row) = row_opt {
+            let mut pixels_opt = row.get_mut(0..);
 
-                        pixels_opt = pixels.get_mut(4..);
-                    } else {
-                        break;
-                    }
+            for _ in x..x + 10 {
+                if let Some(pixels) = pixels_opt {
+                    let color = &mut pixels[0..4];
+                    color[0] = 0xFF;
+                    color[1] = 0xFF;
+                    color[2] = 0xFF;
+                    color[3] = 0xFF;
+
+                    pixels_opt = pixels.get_mut(4..);
+                } else {
+                    break;
                 }
-                row_opt = row.get_mut(buffer.pitch as usize..);
-            } else {
-                break;
             }
+            row_opt = row.get_mut(buffer.pitch as usize..);
+        } else {
+            break;
         }
     }
 }

@@ -30,13 +30,13 @@ typedef struct DebugReadFileResult {
     void *contents;
 } DebugReadFileResult;
 
-#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) DebugReadFileResult name(char *filename)
+#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) DebugReadFileResult name(char *file_name)
 typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(DebugPlatformReadEntireFile);
 
 #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
 typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(DebugPlatformFreeFileMemory);
 
-#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) int name(char *filename, uint32_t memory_size, void *memory)
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) int name(char *file_name, uint32_t memory_size, void *memory)
 typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DebugPlatformWriteEntireFile);
 #endif
 
@@ -103,6 +103,11 @@ typedef struct GameControllerInput {
 } GameControllerInput;
 
 typedef struct GameInput {
+    GameButtonState mouse_buttons[5];
+    int mouse_x;
+    int mouse_y;
+    int mouse_z;
+
     GameControllerInput controllers[5];
 } GameInput;
 
