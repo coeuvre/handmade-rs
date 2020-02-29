@@ -63,27 +63,27 @@ impl GameState {
         self.game_output_sound(sound_buffer, self.tone_hz);
     }
 
-    fn game_output_sound(&mut self, _buffer: &mut GameSoundBuffer, _tone_hz: u32) {
-        // let tone_volume = 3000;
-        // let wave_period = buffer.samples_per_second / tone_hz;
+    fn game_output_sound(&mut self, buffer: &mut GameSoundBuffer, tone_hz: u32) {
+        let tone_volume = 3000;
+        let wave_period = buffer.samples_per_second / tone_hz;
 
-        // let mut sample_out = buffer.samples as *mut i16;
+        let mut sample_out = buffer.samples as *mut i16;
 
-        // for _ in 0..buffer.sample_count {
-        //     unsafe {
-        //         let sine_value = self.t_sine.sin();
-        //         let sample_value = (sine_value * tone_volume as f32) as i16;
-        //         (*sample_out) = sample_value;
-        //         sample_out = sample_out.add(1);
-        //         (*sample_out) = sample_value;
-        //         sample_out = sample_out.add(1);
+        for _ in 0..buffer.sample_count {
+            unsafe {
+                let sine_value = self.t_sine.sin();
+                let sample_value = (sine_value * tone_volume as f32) as i16;
+                (*sample_out) = sample_value;
+                sample_out = sample_out.add(1);
+                (*sample_out) = sample_value;
+                sample_out = sample_out.add(1);
 
-        //         self.t_sine += (1.0 / wave_period as f32) * 2.0 * std::f32::consts::PI;
-        //         if self.t_sine > 2.0 * std::f32::consts::PI {
-        //             self.t_sine -= 2.0 * std::f32::consts::PI;
-        //         }
-        //     }
-        // }
+                self.t_sine += (1.0 / wave_period as f32) * 2.0 * std::f32::consts::PI;
+                if self.t_sine > 2.0 * std::f32::consts::PI {
+                    self.t_sine -= 2.0 * std::f32::consts::PI;
+                }
+            }
+        }
     }
 
     fn render_player(&self, buffer: &mut GameOffscreenBuffer) {

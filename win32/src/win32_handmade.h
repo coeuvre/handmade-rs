@@ -1,6 +1,10 @@
 #ifndef WIN32_HANDMADE
 #define WIN32_HANDMADE
 
+#include <Windows.h>
+#include <Xinput.h>
+#include <dsound.h>
+
 struct Win32WindowDimension {
     int width;
     int height;
@@ -44,6 +48,8 @@ struct Win32DebugTimeMarker {
     DWORD flip_write_cursor;
 };
 
+#define WIN32_STATE_FILE_NAME_COUNT MAX_PATH
+
 struct Win32State {
     size_t total_size;
     void *game_memory_block;
@@ -53,6 +59,9 @@ struct Win32State {
 
     HANDLE input_playback_handle;
     int input_playing_index = 0;
+
+    char exe_filename[WIN32_STATE_FILE_NAME_COUNT];
+    char *one_past_last_exe_filename_slash;
 };
 
 bool RUNNING;
