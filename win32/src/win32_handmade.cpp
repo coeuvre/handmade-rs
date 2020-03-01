@@ -1,4 +1,4 @@
-#include "../../game/src/handmade.h"
+#include "../../game/handmade.h"
 #include "win32_handmade.h"
 
 static void cat_strings(size_t source_a_count, char *source_a,
@@ -801,7 +801,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
     GameInput input[2] = {};
     GameInput *new_input = &input[0];
     GameInput *old_input = &input[1];
-    new_input->seconds_to_advance_over_update = target_seconds_per_frame;
 
     LARGE_INTEGER last_counter = win32_get_wall_clock();
     LARGE_INTEGER flip_wall_clock = win32_get_wall_clock();
@@ -813,6 +812,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
     Win32GameCode game = win32_load_game_code(source_game_code_dll_full_path, temp_game_code_dll_full_path);
 
     while (RUNNING) {
+        new_input->dt = target_seconds_per_frame;
+
         FILETIME new_dll_last_write_time = win32_get_last_write_time(source_game_code_dll_full_path);
         if (CompareFileTime(&new_dll_last_write_time, &game.library_last_write_time) != 0) {
             win32_unload_game_code(&game);
@@ -1064,14 +1065,14 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
             new_input = old_input;
             old_input = tmp_input;
 
-#if 0
+#if 1
             DWORD64 end_cycle_count = __rdtsc();
             int cycles_elapsed = (int) (end_cycle_count - last_cycle_count);
             last_cycle_count = end_cycle_count;
 
             float fps = 0.0; //(float) PERF_COUNT_FREQUENCY / (float) counter_elapsed;
             char buf[1024];
-            sprintf(buf, "%.2fms/f, %.2ff/s, %.2fc/f\n", ms_per_frame, fps, (float) cycles_elapsed / 1000000.0f);
+            sprintf(buf, "%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, (float) cycles_elapsed / 1000000.0f);
             OutputDebugString(buf);
 #endif
 

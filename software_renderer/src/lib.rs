@@ -24,18 +24,26 @@ pub struct RenderBuffer<'a> {
     pub bytes_per_pixel: usize,
 }
 
-pub fn draw_rectangle(buffer: &mut RenderBuffer, min_x: f32, min_y: f32, max_x: f32, max_y: f32, color: u32) {
+pub fn draw_rectangle(
+    buffer: &mut RenderBuffer,
+    min_x: f32,
+    min_y: f32,
+    max_x: f32,
+    max_y: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+) {
     assert_eq!(buffer.bytes_per_pixel, 4);
 
-    let min_x = min_x.round() as usize;
-    let min_y = min_y.round() as usize;
-    let mut max_x = max_x.round() as usize;
-    let mut max_y = max_y.round() as usize;
+    let min_x = min_x.round().max(0.0) as usize;
+    let min_y = min_y.round().max(0.0) as usize;
+    let max_x = (max_x.round() as usize).min(buffer.width);
+    let max_y = (max_y.round() as usize).min(buffer.height);
 
-    if max_x > buffer.width  { max_x = buffer.width; }
-    if max_y > buffer.height { max_y = buffer.height; }
-
-    if min_x >= max_x || min_y >= max_y { return; }
+    if min_x >= max_x || min_y >= max_y {
+        return;
+    }
 
     let bytes_per_pixel = buffer.bytes_per_pixel;
     let min_row = min_y * buffer.pitch;
@@ -43,10 +51,17 @@ pub fn draw_rectangle(buffer: &mut RenderBuffer, min_x: f32, min_y: f32, max_x: 
     let min_col = min_x * bytes_per_pixel;
     let max_col = max_x * bytes_per_pixel;
 
-    buffer.bytes[min_row..max_row].chunks_mut(buffer.pitch).for_each(|row| {
-        row[min_col..max_col].chunks_mut(bytes_per_pixel).for_each(|pixel| {
-            unsafe { *(pixel.as_mut_ptr() as *mut u32) = color; }
-        });
-    });
-}
+    let r = (r * 255.0).round() as u8;
+    let g = (g * 255.0).round() as u8;
+    let b = (b * 255.0).round() as u8;
 
+    for row in buffer.bytes[min_row..max_row].chunks_exact_mut(buffer.pitch) {
+        let row = unsafe { row.get_unchecked_mut(min_col..max_col) };
+        for pixel in row.chunks_exact_mut(bytes_per_pixel) {
+            // PATTERN: BB GG RR AA
+            pixel[0] = b;
+            pixel[1] = g;
+            pixel[2] = r;
+        }
+    }
+}

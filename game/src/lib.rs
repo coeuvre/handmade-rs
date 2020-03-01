@@ -1,9 +1,9 @@
 extern crate software_renderer;
 
-use std::os::raw::{c_int, c_void};
-use game::GameState;
-
 mod game;
+
+use game::GameState;
+use std::os::raw::{c_int, c_void};
 
 #[repr(C)]
 pub struct GameMemory {
@@ -52,7 +52,7 @@ pub struct GameControllerInput {
     pub action_down: GameButtonState,
     pub action_left: GameButtonState,
     pub action_right: GameButtonState,
-    
+
     pub left_shoulder: GameButtonState,
     pub right_shoulder: GameButtonState,
 
@@ -66,7 +66,7 @@ pub struct GameInput {
     pub mouse_x: i32,
     pub mouse_y: i32,
     pub mouse_z: i32,
-    pub seconds_to_advance_over_update: f32,
+    pub dt: f32,
     pub controllers: [GameControllerInput; 4],
 }
 
@@ -74,7 +74,7 @@ pub struct GameInput {
 pub unsafe extern "C" fn game_update_and_render(
     memory: *mut GameMemory,
     input: *const GameInput,
-    offscreen_buffer: *mut GameOffscreenBuffer
+    offscreen_buffer: *mut GameOffscreenBuffer,
 ) {
     let memory = &mut *memory;
     let game_state = &mut *(memory.permanent_storage as *mut game::GameState);
@@ -87,11 +87,10 @@ pub unsafe extern "C" fn game_update_and_render(
     game_state.update_and_render(&*input, &mut *offscreen_buffer);
 }
 
-
 #[no_mangle]
 pub unsafe extern "C" fn game_get_sound_samples(
     memory: *mut GameMemory,
-    sound_buffer: *mut GameSoundBuffer
+    sound_buffer: *mut GameSoundBuffer,
 ) {
     let memory = &mut *memory;
     let game_state = &mut *(memory.permanent_storage as *mut game::GameState);
