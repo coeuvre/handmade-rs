@@ -108,6 +108,8 @@ typedef struct GameInput {
     int mouse_y;
     int mouse_z;
 
+    float seconds_to_advance_over_update;
+
     GameControllerInput controllers[5];
 } GameInput;
 

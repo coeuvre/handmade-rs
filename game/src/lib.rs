@@ -66,6 +66,7 @@ pub struct GameInput {
     pub mouse_x: i32,
     pub mouse_y: i32,
     pub mouse_z: i32,
+    pub seconds_to_advance_over_update: f32,
     pub controllers: [GameControllerInput; 4],
 }
 

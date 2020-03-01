@@ -1,6 +1,6 @@
 add_executable(win32_handmade WIN32 src/win32_handmade.cpp)
 target_compile_options(win32_handmade PRIVATE
-        /MTd /Gm- /Od /Oi /FC /W4 /WX /wd4201 /wd4100 /wd4189)
+        /MTd /Gm- /Od /Oi /FC /W4 /WX /wd4201 /wd4100 /wd4189 /wd4505)
 target_compile_definitions(win32_handmade PRIVATE
         _CRT_SECURE_NO_WARNINGS
         HANDMADE_INTERNAL=1

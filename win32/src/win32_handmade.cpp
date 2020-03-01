@@ -1,4 +1,4 @@
-#include "handmade.h"
+#include "../../game/src/handmade.h"
 #include "win32_handmade.h"
 
 static void cat_strings(size_t source_a_count, char *source_a,
@@ -703,7 +703,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
 
     win32_load_xinput();
 
-    win32_resize_dib_section(&BACK_BUFFER, 1280, 720);
+    win32_resize_dib_section(&BACK_BUFFER, 960, 540);
 
     HINSTANCE instance = GetModuleHandle(0);
 
@@ -801,6 +801,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
     GameInput input[2] = {};
     GameInput *new_input = &input[0];
     GameInput *old_input = &input[1];
+    new_input->seconds_to_advance_over_update = target_seconds_per_frame;
 
     LARGE_INTEGER last_counter = win32_get_wall_clock();
     LARGE_INTEGER flip_wall_clock = win32_get_wall_clock();
