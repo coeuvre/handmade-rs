@@ -25,10 +25,6 @@ impl GameState {
     ) {
         let tile_map_count_x = 17;
         let tile_map_count_y = 9;
-        let tile_map_upper_left_x = -30.0;
-        let tile_map_upper_left_y = 0.0;
-        let tile_map_tile_width = 60.0;
-        let tile_map_tile_height = 60.0;
         let tile_map_00 = TileMap {
             #[rustfmt::skip]
             tiles: vec![
@@ -85,13 +81,15 @@ impl GameState {
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             ],
         };
+        let tile_map_upper_left_x = -30.0;
+        let tile_map_upper_left_y = 0.0;
         let world = World {
+            tile_side_in_meters: 1.4,
+            tile_side_in_pixels: 60,
             upper_left_x: tile_map_upper_left_x,
             upper_left_y: tile_map_upper_left_y,
             tile_count_x: tile_map_count_x,
             tile_count_y: tile_map_count_y,
-            tile_width: tile_map_tile_width,
-            tile_height: tile_map_tile_height,
             tile_map_count_x: 2,
             tile_map_count_y: 2,
             tile_maps: vec![tile_map_00, tile_map_10, tile_map_01, tile_map_11],
@@ -103,8 +101,8 @@ impl GameState {
             );
         }
 
-        let player_width = 0.75 * world.tile_width;
-        let player_height = world.tile_height;
+        let player_width = 0.75 * world.tile_side_in_pixels as f32;
+        let player_height = world.tile_side_in_pixels as f32;
 
         let tile_map = world
             .get_tile_map(self.player_tile_map_x, self.player_tile_map_y)
@@ -149,10 +147,10 @@ impl GameState {
                     self.player_tile_map_x = can_pos.tile_map_x;
                     self.player_tile_map_y = can_pos.tile_map_y;
                     self.player_x = world.upper_left_x
-                        + can_pos.tile_x as f32 * world.tile_width
+                        + can_pos.tile_x as f32 * world.tile_side_in_pixels as f32
                         + can_pos.x_within_tile;
                     self.player_y = world.upper_left_y
-                        + can_pos.tile_y as f32 * world.tile_height
+                        + can_pos.tile_y as f32 * world.tile_side_in_pixels as f32
                         + can_pos.y_within_tile;
                 }
             }
@@ -181,10 +179,10 @@ impl GameState {
             for (x, tile_value) in row.iter().enumerate() {
                 let gray = if *tile_value == 1 { 1.0 } else { 0.5 };
 
-                let min_x = tile_map.upper_left_x + x as f32 * tile_map.tile_width;
-                let min_y = tile_map.upper_left_y + y as f32 * tile_map.tile_height;
-                let max_x = min_x + tile_map.tile_width;
-                let max_y = min_y + tile_map.tile_height;
+                let min_x = tile_map.upper_left_x + x as f32 * tile_map.tile_side_in_pixels as f32;
+                let min_y = tile_map.upper_left_y + y as f32 * tile_map.tile_side_in_pixels as f32;
+                let max_x = min_x + tile_map.tile_side_in_pixels as f32;
+                let max_y = min_y + tile_map.tile_side_in_pixels as f32;
                 draw_rectangle(
                     &mut render_buffer,
                     min_x,
@@ -276,8 +274,7 @@ struct TileMapView<'a> {
     pub upper_left_y: f32,
     pub tile_count_x: i32,
     pub tile_count_y: i32,
-    pub tile_width: f32,
-    pub tile_height: f32,
+    pub tile_side_in_pixels: i32,
 }
 
 impl<'a> TileMapView<'a> {
@@ -299,12 +296,13 @@ impl<'a> TileMapView<'a> {
 }
 
 struct World {
+    pub tile_side_in_meters: f32,
+    pub tile_side_in_pixels: i32,
+
     pub upper_left_x: f32,
     pub upper_left_y: f32,
     pub tile_count_x: i32,
     pub tile_count_y: i32,
-    pub tile_width: f32,
-    pub tile_height: f32,
     pub tile_map_count_x: i32,
     pub tile_map_count_y: i32,
     pub tile_maps: Vec<TileMap>,
@@ -320,8 +318,7 @@ impl World {
                 upper_left_y: self.upper_left_y,
                 tile_count_x: self.tile_count_x,
                 tile_count_y: self.tile_count_y,
-                tile_width: self.tile_width,
-                tile_height: self.tile_height,
+                tile_side_in_pixels: self.tile_side_in_pixels,
             })
     }
 
@@ -331,13 +328,13 @@ impl World {
 
         let x = pos.x_within_tile_map - self.upper_left_x;
         let y = pos.y_within_tile_map - self.upper_left_y;
-        let mut tile_x = (x / self.tile_width).floor() as i32;
-        let mut tile_y = (y / self.tile_height).floor() as i32;
-        let x_within_tile = x - tile_x as f32 * self.tile_width;
-        let y_within_tile = y - tile_y as f32 * self.tile_height;
+        let mut tile_x = (x / self.tile_side_in_pixels as f32).floor() as i32;
+        let mut tile_y = (y / self.tile_side_in_pixels as f32).floor() as i32;
+        let x_within_tile = x - tile_x as f32 * self.tile_side_in_pixels as f32;
+        let y_within_tile = y - tile_y as f32 * self.tile_side_in_pixels as f32;
 
-        assert!(x_within_tile >= 0.0 && x_within_tile < self.tile_width);
-        assert!(y_within_tile >= 0.0 && y_within_tile < self.tile_height);
+        assert!(x_within_tile >= 0.0 && x_within_tile < self.tile_side_in_pixels as f32);
+        assert!(y_within_tile >= 0.0 && y_within_tile < self.tile_side_in_pixels as f32);
 
         while tile_x < 0 {
             tile_map_x -= 1;
