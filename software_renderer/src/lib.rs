@@ -36,20 +36,20 @@ pub fn draw_rectangle(
 ) {
     assert_eq!(buffer.bytes_per_pixel, 4);
 
-    let min_x = min_x.round().max(0.0) as usize;
-    let min_y = min_y.round().max(0.0) as usize;
-    let max_x = (max_x.round() as usize).min(buffer.width);
-    let max_y = (max_y.round() as usize).min(buffer.height);
+    let min_x = min_x.round().max(0.0) as isize;
+    let min_y = min_y.round().max(0.0) as isize;
+    let max_x = (max_x.round() as isize).min(buffer.width as isize);
+    let max_y = (max_y.round() as isize).min(buffer.height as isize);
 
     if min_x >= max_x || min_y >= max_y {
         return;
     }
 
     let bytes_per_pixel = buffer.bytes_per_pixel;
-    let min_row = min_y * buffer.pitch;
-    let max_row = max_y * buffer.pitch;
-    let min_col = min_x * bytes_per_pixel;
-    let max_col = max_x * bytes_per_pixel;
+    let min_row = min_y as usize * buffer.pitch;
+    let max_row = max_y as usize * buffer.pitch;
+    let min_col = min_x as usize * bytes_per_pixel;
+    let max_col = max_x as usize * bytes_per_pixel;
 
     let r = (r * 255.0).round() as u8;
     let g = (g * 255.0).round() as u8;

@@ -1,13 +1,12 @@
-#ifndef HANDMADE_H
-#define HANDMADE_H
-
-#include <stdint.h>
-#include <stdio.h>
-#include <assert.h>
+#ifndef HANDMADE_PLATFORM_H
+#define HANDMADE_PLATFORM_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <stdint.h>
+#include <assert.h>
 
 #define ASSERT(expr) assert(expr)
 #define ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
@@ -16,7 +15,6 @@ extern "C" {
 #define MEGABYTES(value) (KILOBYTES(value) * 1024LL)
 #define GIGABYTES(value) (MEGABYTES(value) * 1024LL)
 #define TERABYTES(value) (GIGABYTES(value) * 1024LL)
-
 
 inline uint32_t
 safe_truncate_uint64(uint64_t value) {
@@ -129,4 +127,4 @@ typedef GAME_GET_SOUND_SAMPLES(GameGetSoundSamples);
 }
 #endif
 
-#endif // HANDMADE_H
+#endif // HANDMADE_PLATFORM_H

@@ -1,4 +1,4 @@
-#include "../../game/handmade.h"
+#include "../../game/handmade_platform.h"
 #include "win32_handmade.h"
 
 static void cat_strings(size_t source_a_count, char *source_a,
@@ -317,10 +317,18 @@ static void win32_resize_dib_section(Win32OffscreenBuffer *buffer, int width, in
 
 static void
 win32_display_buffer_in_window(HDC device_context, int window_width, int window_height, Win32OffscreenBuffer *buffer) {
+    int offset_x = 10;
+    int offset_y = 10;
+
+    PatBlt(device_context, 0, 0, window_width, offset_y, BLACKNESS);
+    PatBlt(device_context, 0, offset_y, offset_x, window_height - offset_y, BLACKNESS);
+    PatBlt(device_context, offset_x + buffer->width, offset_y, window_width - offset_x - buffer->width, window_height - offset_y, BLACKNESS);
+    PatBlt(device_context, offset_x, offset_y + buffer->height, window_width - offset_x, window_height - offset_y - buffer->height, BLACKNESS);
+
     StretchDIBits(
             device_context,
-            0,
-            0,
+            offset_x,
+            offset_y,
             buffer->width,
             buffer->height,
             0,
@@ -1072,7 +1080,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
 
             float fps = 0.0; //(float) PERF_COUNT_FREQUENCY / (float) counter_elapsed;
             char buf[1024];
-            sprintf(buf, "%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, (float) cycles_elapsed / 1000000.0f);
+            wsprintf(buf, "%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, (float) cycles_elapsed / 1000000.0f);
             OutputDebugString(buf);
 #endif
 

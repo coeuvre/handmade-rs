@@ -11,13 +11,75 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn init(&mut self) {}
+    pub fn init(&mut self) {
+        self.player_x = 150.0;
+        self.player_y = 150.0;
+    }
 
     pub fn update_and_render(
         &mut self,
         input: &GameInput,
         offscreen_buffer: &mut GameOffscreenBuffer,
     ) {
+        let tile_map_count_x = 17;
+        let tile_map_count_y = 9;
+        let tile_map_upper_left_x = -30.0;
+        let tile_map_upper_left_y = 0.0;
+        let tile_map_tile_width = 60.0;
+        let tile_map_tile_height = 60.0;
+        let tile_map_0 = TileMap {
+            count_x: tile_map_count_x,
+            count_y: tile_map_count_y,
+            upper_left_x: tile_map_upper_left_x,
+            upper_left_y: tile_map_upper_left_y,
+            tile_width: tile_map_tile_width,
+            tile_height: tile_map_tile_height,
+            #[rustfmt::skip]
+            tiles: vec![
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+            ],
+        };
+        let tile_map_1 = TileMap {
+            count_x: tile_map_count_x,
+            count_y: tile_map_count_y,
+            upper_left_x: tile_map_upper_left_x,
+            upper_left_y: tile_map_upper_left_y,
+            tile_width: tile_map_tile_width,
+            tile_height: tile_map_tile_height,
+            #[rustfmt::skip]
+            tiles: vec![
+                1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            ],
+        };
+        let tile_maps = vec![tile_map_0, tile_map_1];
+        for tile_map in tile_maps.iter() {
+            assert_eq!(
+                tile_map.tiles.len(),
+                (tile_map.count_x * tile_map.count_y) as usize
+            );
+        }
+
+        let tile_map = &tile_maps[0];
+
+        let player_width = 0.75 * tile_map.tile_width;
+        let player_height = tile_map.tile_height;
+
         for controller in input.controllers.iter() {
             if controller.is_analog == 0 {
                 let mut d_player_x = 0.0;
@@ -36,26 +98,23 @@ impl GameState {
                 }
                 d_player_x *= 128.0;
                 d_player_y *= 128.0;
-                self.player_x += d_player_x * input.dt;
-                self.player_y += d_player_y * input.dt;
+                let new_player_x = self.player_x + d_player_x * input.dt;
+                let new_player_y = self.player_y + d_player_y * input.dt;
+
+                if tile_map.is_tile_map_point_empty(new_player_x - 0.5 * player_width, new_player_y)
+                    && tile_map
+                        .is_tile_map_point_empty(new_player_x + 0.5 * player_width, new_player_y)
+                    && tile_map.is_tile_map_point_empty(new_player_x, new_player_y)
+                {
+                    self.player_x = new_player_x;
+                    self.player_y = new_player_y;
+                }
             }
         }
 
         let mut render_buffer: RenderBuffer = offscreen_buffer.into();
         let screen_width = render_buffer.width;
         let screen_height = render_buffer.height;
-
-        let tile_map = [
-            [1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-            [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-        ];
 
         draw_rectangle(
             &mut render_buffer,
@@ -68,18 +127,18 @@ impl GameState {
             0.0,
         );
 
-        let upper_left_x = -30.0;
-        let upper_left_y = 0.0;
-        let tile_width = 60.0;
-        let tile_height = 60.0;
-        for (y, row) in tile_map.iter().enumerate() {
-            for (x, tile_id) in row.iter().enumerate() {
-                let gray = if *tile_id == 1 { 1.0 } else { 0.5 };
+        for (y, row) in tile_map
+            .tiles
+            .chunks_exact(tile_map.count_x as usize)
+            .enumerate()
+        {
+            for (x, tile_value) in row.iter().enumerate() {
+                let gray = if *tile_value == 1 { 1.0 } else { 0.5 };
 
-                let min_x = upper_left_x + x as f32 * tile_width;
-                let min_y = upper_left_y + y as f32 * tile_height;
-                let max_x = min_x + tile_width;
-                let max_y = min_y + tile_height;
+                let min_x = tile_map.upper_left_x + x as f32 * tile_map.tile_width;
+                let min_y = tile_map.upper_left_y + y as f32 * tile_map.tile_height;
+                let max_x = min_x + tile_map.tile_width;
+                let max_y = min_y + tile_map.tile_height;
                 draw_rectangle(
                     &mut render_buffer,
                     min_x,
@@ -96,8 +155,6 @@ impl GameState {
         let player_r = 1.0;
         let player_g = 1.0;
         let player_b = 0.0;
-        let player_width = 0.75 * tile_width;
-        let player_height = tile_height;
         let player_left = self.player_x - 0.5 * player_width;
         let player_top = self.player_y - player_height;
         let player_right = player_left + player_width;
@@ -157,5 +214,39 @@ impl<'a> From<&'a mut GameOffscreenBuffer> for RenderBuffer<'a> {
             pitch: buffer.pitch as usize,
             bytes_per_pixel: buffer.bytes_per_pixel as usize,
         }
+    }
+}
+
+#[derive(Clone)]
+struct TileMap {
+    pub count_x: i32,
+    pub count_y: i32,
+
+    pub upper_left_x: f32,
+    pub upper_left_y: f32,
+    pub tile_width: f32,
+    pub tile_height: f32,
+
+    pub tiles: Vec<i32>,
+}
+
+impl TileMap {
+    fn is_tile_map_point_empty(&self, test_x: f32, test_y: f32) -> bool {
+        let test_tile_x = ((test_x - self.upper_left_x) / self.tile_width) as i32;
+        let test_tile_y = ((test_y - self.upper_left_y) / self.tile_height) as i32;
+
+        let mut is_empty = false;
+        if test_tile_x >= 0
+            && (test_tile_x) < self.count_x
+            && test_tile_y >= 0
+            && (test_tile_y) < self.count_y
+        {
+            let tile_value = self
+                .tiles
+                .get((test_tile_y * self.count_x + test_tile_x) as usize)
+                .unwrap();
+            is_empty = *tile_value == 0;
+        }
+        is_empty
     }
 }
