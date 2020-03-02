@@ -6,6 +6,8 @@ use crate::GameSoundBuffer;
 
 #[derive(Default)]
 pub struct GameState {
+    player_tile_map_x: i32,
+    player_tile_map_y: i32,
     player_x: f32,
     player_y: f32,
 }
@@ -27,58 +29,86 @@ impl GameState {
         let tile_map_upper_left_y = 0.0;
         let tile_map_tile_width = 60.0;
         let tile_map_tile_height = 60.0;
-        let tile_map_0 = TileMap {
-            count_x: tile_map_count_x,
-            count_y: tile_map_count_y,
-            upper_left_x: tile_map_upper_left_x,
-            upper_left_y: tile_map_upper_left_y,
-            tile_width: tile_map_tile_width,
-            tile_height: tile_map_tile_height,
+        let tile_map_00 = TileMap {
             #[rustfmt::skip]
             tiles: vec![
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
             ],
         };
-        let tile_map_1 = TileMap {
-            count_x: tile_map_count_x,
-            count_y: tile_map_count_y,
-            upper_left_x: tile_map_upper_left_x,
-            upper_left_y: tile_map_upper_left_y,
-            tile_width: tile_map_tile_width,
-            tile_height: tile_map_tile_height,
+        let tile_map_01 = TileMap {
             #[rustfmt::skip]
             tiles: vec![
                 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             ],
         };
-        let tile_maps = vec![tile_map_0, tile_map_1];
-        for tile_map in tile_maps.iter() {
+        let tile_map_10 = TileMap {
+            #[rustfmt::skip]
+            tiles: vec![
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+            ],
+        };
+        let tile_map_11 = TileMap {
+            #[rustfmt::skip]
+            tiles: vec![
+                1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            ],
+        };
+        let world = World {
+            upper_left_x: tile_map_upper_left_x,
+            upper_left_y: tile_map_upper_left_y,
+            tile_count_x: tile_map_count_x,
+            tile_count_y: tile_map_count_y,
+            tile_width: tile_map_tile_width,
+            tile_height: tile_map_tile_height,
+            tile_map_count_x: 2,
+            tile_map_count_y: 2,
+            tile_maps: vec![tile_map_00, tile_map_10, tile_map_01, tile_map_11],
+        };
+        for tile_map in world.tile_maps.iter() {
             assert_eq!(
                 tile_map.tiles.len(),
-                (tile_map.count_x * tile_map.count_y) as usize
+                (world.tile_count_x * world.tile_count_y) as usize
             );
         }
 
-        let tile_map = &tile_maps[0];
+        let player_width = 0.75 * world.tile_width;
+        let player_height = world.tile_height;
 
-        let player_width = 0.75 * tile_map.tile_width;
-        let player_height = tile_map.tile_height;
+        let tile_map = world
+            .get_tile_map(self.player_tile_map_x, self.player_tile_map_y)
+            .unwrap();
 
         for controller in input.controllers.iter() {
             if controller.is_analog == 0 {
@@ -101,13 +131,29 @@ impl GameState {
                 let new_player_x = self.player_x + d_player_x * input.dt;
                 let new_player_y = self.player_y + d_player_y * input.dt;
 
-                if tile_map.is_tile_map_point_empty(new_player_x - 0.5 * player_width, new_player_y)
-                    && tile_map
-                        .is_tile_map_point_empty(new_player_x + 0.5 * player_width, new_player_y)
-                    && tile_map.is_tile_map_point_empty(new_player_x, new_player_y)
+                let player_pos = RawPosition {
+                    tile_map_x: self.player_tile_map_x,
+                    tile_map_y: self.player_tile_map_y,
+                    x_within_tile_map: new_player_x,
+                    y_within_tile_map: new_player_y,
+                };
+                let mut player_left = player_pos;
+                player_left.x_within_tile_map -= 0.5 * player_width;
+                let mut player_right = player_pos;
+                player_right.x_within_tile_map += 0.5 * player_width;
+                if world.is_world_point_empty(player_left)
+                    && world.is_world_point_empty(player_right)
+                    && world.is_world_point_empty(player_pos)
                 {
-                    self.player_x = new_player_x;
-                    self.player_y = new_player_y;
+                    let can_pos = world.get_canonical_position(player_pos);
+                    self.player_tile_map_x = can_pos.tile_map_x;
+                    self.player_tile_map_y = can_pos.tile_map_y;
+                    self.player_x = world.upper_left_x
+                        + can_pos.tile_x as f32 * world.tile_width
+                        + can_pos.x_within_tile;
+                    self.player_y = world.upper_left_y
+                        + can_pos.tile_y as f32 * world.tile_height
+                        + can_pos.y_within_tile;
                 }
             }
         }
@@ -129,7 +175,7 @@ impl GameState {
 
         for (y, row) in tile_map
             .tiles
-            .chunks_exact(tile_map.count_x as usize)
+            .chunks_exact(tile_map.tile_count_x as usize)
             .enumerate()
         {
             for (x, tile_value) in row.iter().enumerate() {
@@ -219,34 +265,133 @@ impl<'a> From<&'a mut GameOffscreenBuffer> for RenderBuffer<'a> {
 
 #[derive(Clone)]
 struct TileMap {
-    pub count_x: i32,
-    pub count_y: i32,
-
-    pub upper_left_x: f32,
-    pub upper_left_y: f32,
-    pub tile_width: f32,
-    pub tile_height: f32,
-
     pub tiles: Vec<i32>,
 }
 
-impl TileMap {
-    fn is_tile_map_point_empty(&self, test_x: f32, test_y: f32) -> bool {
-        let test_tile_x = ((test_x - self.upper_left_x) / self.tile_width) as i32;
-        let test_tile_y = ((test_y - self.upper_left_y) / self.tile_height) as i32;
+impl TileMap {}
 
+struct TileMapView<'a> {
+    pub tiles: &'a Vec<i32>,
+    pub upper_left_x: f32,
+    pub upper_left_y: f32,
+    pub tile_count_x: i32,
+    pub tile_count_y: i32,
+    pub tile_width: f32,
+    pub tile_height: f32,
+}
+
+impl<'a> TileMapView<'a> {
+    pub fn is_tile_map_point_empty(&self, test_tile_x: i32, test_tile_y: i32) -> bool {
         let mut is_empty = false;
         if test_tile_x >= 0
-            && (test_tile_x) < self.count_x
+            && (test_tile_x) < self.tile_count_x
             && test_tile_y >= 0
-            && (test_tile_y) < self.count_y
+            && (test_tile_y) < self.tile_count_y
         {
             let tile_value = self
                 .tiles
-                .get((test_tile_y * self.count_x + test_tile_x) as usize)
+                .get((test_tile_y * self.tile_count_x + test_tile_x) as usize)
                 .unwrap();
             is_empty = *tile_value == 0;
         }
         is_empty
     }
+}
+
+struct World {
+    pub upper_left_x: f32,
+    pub upper_left_y: f32,
+    pub tile_count_x: i32,
+    pub tile_count_y: i32,
+    pub tile_width: f32,
+    pub tile_height: f32,
+    pub tile_map_count_x: i32,
+    pub tile_map_count_y: i32,
+    pub tile_maps: Vec<TileMap>,
+}
+
+impl World {
+    pub fn get_tile_map(&self, tile_map_x: i32, tile_map_y: i32) -> Option<TileMapView> {
+        self.tile_maps
+            .get((tile_map_y * self.tile_map_count_x + tile_map_x) as usize)
+            .map(|tile_map| TileMapView {
+                tiles: &tile_map.tiles,
+                upper_left_x: self.upper_left_x,
+                upper_left_y: self.upper_left_y,
+                tile_count_x: self.tile_count_x,
+                tile_count_y: self.tile_count_y,
+                tile_width: self.tile_width,
+                tile_height: self.tile_height,
+            })
+    }
+
+    pub fn get_canonical_position(&self, pos: RawPosition) -> CanonicalPosition {
+        let mut tile_map_x = pos.tile_map_x;
+        let mut tile_map_y = pos.tile_map_y;
+
+        let x = pos.x_within_tile_map - self.upper_left_x;
+        let y = pos.y_within_tile_map - self.upper_left_y;
+        let mut tile_x = (x / self.tile_width).floor() as i32;
+        let mut tile_y = (y / self.tile_height).floor() as i32;
+        let x_within_tile = x - tile_x as f32 * self.tile_width;
+        let y_within_tile = y - tile_y as f32 * self.tile_height;
+
+        assert!(x_within_tile >= 0.0 && x_within_tile < self.tile_width);
+        assert!(y_within_tile >= 0.0 && y_within_tile < self.tile_height);
+
+        while tile_x < 0 {
+            tile_map_x -= 1;
+            tile_x += self.tile_count_x;
+        }
+
+        while tile_x >= self.tile_count_x {
+            tile_map_x += 1;
+            tile_x -= self.tile_count_x;
+        }
+
+        while tile_y < 0 {
+            tile_map_y -= 1;
+            tile_y += self.tile_count_y;
+        }
+
+        while tile_y >= self.tile_count_y {
+            tile_map_y += 1;
+            tile_y -= self.tile_count_y;
+        }
+
+        CanonicalPosition {
+            tile_map_x,
+            tile_map_y,
+            tile_x,
+            tile_y,
+            x_within_tile,
+            y_within_tile,
+        }
+    }
+
+    pub fn is_world_point_empty(&self, pos: RawPosition) -> bool {
+        let can_pos = self.get_canonical_position(pos);
+        let tile_map = self
+            .get_tile_map(can_pos.tile_map_x, can_pos.tile_map_y)
+            .unwrap();
+        tile_map.is_tile_map_point_empty(can_pos.tile_x, can_pos.tile_y)
+    }
+}
+
+#[derive(Copy, Clone)]
+struct CanonicalPosition {
+    pub tile_map_x: i32,
+    pub tile_map_y: i32,
+    pub tile_x: i32,
+    pub tile_y: i32,
+    pub x_within_tile: f32,
+    pub y_within_tile: f32,
+}
+
+#[derive(Copy, Clone)]
+struct RawPosition {
+    pub tile_map_x: i32,
+    pub tile_map_y: i32,
+    pub x_within_tile_map: f32,
+    pub y_within_tile_map: f32,
 }

@@ -59,9 +59,11 @@ pub fn draw_rectangle(
         let row = unsafe { row.get_unchecked_mut(min_col..max_col) };
         for pixel in row.chunks_exact_mut(bytes_per_pixel) {
             // PATTERN: BB GG RR AA
-            pixel[0] = b;
-            pixel[1] = g;
-            pixel[2] = r;
+            unsafe {
+                *pixel.get_unchecked_mut(0) = b;
+                *pixel.get_unchecked_mut(1) = g;
+                *pixel.get_unchecked_mut(2) = r;
+            }
         }
     }
 }
