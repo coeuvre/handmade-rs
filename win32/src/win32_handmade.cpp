@@ -108,7 +108,7 @@ static void win32_get_input_file_location(Win32State *state, bool input_stream, 
 }
 
 static Win32ReplayBuffer *win32_get_replay_buffer(Win32State *state, int index) {
-    ASSERT(index < ARRAY_COUNT(state->replay_buffers));
+    ASSERT(index > 0 && index < ARRAY_COUNT(state->replay_buffers));
     return &state->replay_buffers[index];
 }
 
@@ -789,7 +789,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
     game_memory.debug_platform_read_entire_file = debug_platform_read_entire_file;
     game_memory.debug_platform_write_entire_file = debug_platform_write_entire_file;
 
-    for (int index = 0; index < ARRAY_COUNT(win32_state.replay_buffers); ++index) {
+    for (int index = 1; index < ARRAY_COUNT(win32_state.replay_buffers); ++index) {
         Win32ReplayBuffer *replay_buffer = &win32_state.replay_buffers[index];
         win32_get_input_file_location(&win32_state, false, index, sizeof(replay_buffer->file_name), replay_buffer->file_name);
         replay_buffer->file_handle = CreateFileA(replay_buffer->file_name, GENERIC_WRITE | GENERIC_READ, 0, 0,
