@@ -7,6 +7,7 @@ authors = ["coeuvre"]
 crate-type = ["cdylib"]
 
 [dependencies]
+libc = "0.2"
 
 [dependencies.software_renderer]
 path = "../software_renderer"

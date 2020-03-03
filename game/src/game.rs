@@ -4,17 +4,279 @@ use crate::GameInput;
 use crate::GameOffscreenBuffer;
 use crate::GameSoundBuffer;
 
-#[derive(Default)]
+use crate::tile_map::*;
+use core::ops::{Deref, DerefMut};
+
+struct World {
+    tile_map: ArenaObject<TileMap>,
+}
+
 pub struct GameState {
-    player_p: WorldPosition,
+    world_arena: MemoryArena,
+    world: ArenaObject<World>,
+    player_p: TileMapPosition,
+}
+
+pub struct MemoryArena {
+    base: *mut u8,
+    size: usize,
+    used: usize,
+}
+
+pub struct ArenaArray<T> {
+    ptr: *mut T,
+    len: usize,
+}
+
+impl<T> ArenaArray<T> {
+    pub fn from_raw_parts(ptr: *mut T, len: usize) -> ArenaArray<T> {
+        ArenaArray { ptr, len }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn iter(&self) -> ArenaArrayIter<T> {
+        ArenaArrayIter {
+            array: self,
+            index: 0,
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> ArenaArrayIterMut<T> {
+        ArenaArrayIterMut {
+            array: self,
+            index: 0,
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index >= self.len {
+            return None;
+        }
+        Some(unsafe { self.get_unchecked(index) })
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        if index >= self.len {
+            return None;
+        }
+        Some(unsafe { self.get_unchecked_mut(index) })
+    }
+
+    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
+        &*self.ptr.offset(index as isize)
+    }
+
+    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
+        &mut *self.ptr.offset(index as isize)
+    }
+}
+
+pub struct ArenaArrayIter<'a, T> {
+    array: &'a ArenaArray<T>,
+    index: usize,
+}
+
+impl<'a, T> Iterator for ArenaArrayIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.array.len() {
+            return None;
+        }
+
+        let item = unsafe { self.array.get_unchecked(self.index) };
+        self.index += 1;
+        Some(item)
+    }
+}
+
+pub struct ArenaArrayIterMut<'a, T> {
+    array: &'a mut ArenaArray<T>,
+    index: usize,
+}
+
+impl<'a, T> Iterator for ArenaArrayIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.array.len() {
+            return None;
+        }
+        let item = unsafe { &mut *self.array.ptr.offset(self.index as isize) };
+        self.index += 1;
+        Some(item)
+    }
+}
+
+pub struct ArenaObject<T: ?Sized> {
+    ptr: *mut T,
+}
+
+impl<T> ArenaObject<T> {
+    pub fn from_raw(ptr: *mut T) -> ArenaObject<T> {
+        ArenaObject { ptr }
+    }
+}
+
+impl<T> AsRef<T> for ArenaObject<T> {
+    fn as_ref(&self) -> &T {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl<T> AsMut<T> for ArenaObject<T> {
+    fn as_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+impl<T> Deref for ArenaObject<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl<T> DerefMut for ArenaObject<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+impl MemoryArena {
+    pub fn from_raw_parts(base: *mut u8, size: usize) -> MemoryArena {
+        MemoryArena {
+            base,
+            size,
+            used: 0,
+        }
+    }
+
+    pub fn alloc<T>(&mut self, val: T) -> ArenaObject<T> {
+        unsafe {
+            let mut result = self.alloc_uninit::<T>();
+            *result = val;
+            result
+        }
+    }
+
+    pub unsafe fn alloc_uninit<T>(&mut self) -> ArenaObject<T> {
+        let size = core::mem::size_of::<T>();
+        let memory = self.alloc_size(size);
+        ArenaObject::from_raw(memory as *mut T)
+    }
+
+    pub fn alloc_array<T: Clone>(&mut self, val: T, len: usize) -> ArenaArray<T> {
+        let mut array = unsafe { self.alloc_array_uninit::<T>(len) };
+        for e in array.iter_mut() {
+            *e = val.clone();
+        }
+        array
+    }
+
+    pub unsafe fn alloc_array_uninit<T>(&mut self, len: usize) -> ArenaArray<T> {
+        let size = core::mem::size_of::<T>() * len;
+        let memory = self.alloc_size(size);
+        ArenaArray::from_raw_parts(memory as *mut T, len)
+    }
+
+    unsafe fn alloc_size(&mut self, size: usize) -> *mut u8 {
+        assert!(self.used + size <= self.size);
+
+        let memory = self.base.offset(self.used as isize);
+        self.used += size;
+        memory
+    }
+
+    pub fn reserve(&mut self, size: usize) -> MemoryArena {
+        assert!(self.used + size <= self.size);
+        let base = unsafe { self.base.offset(self.used as isize) };
+        self.used += size;
+        MemoryArena::from_raw_parts(base, size)
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.size - self.used
+    }
 }
 
 impl GameState {
-    pub fn init(&mut self) {
-        self.player_p.abs_tile_x = 3;
-        self.player_p.abs_tile_y = 3;
-        self.player_p.tile_rel_x = 0.0;
-        self.player_p.tile_rel_y = 0.0;
+    pub unsafe fn new(permanent_storage: &mut MemoryArena) -> GameState {
+        let mut world_arena = permanent_storage.reserve(permanent_storage.remaining());
+        let mut tile_map = world_arena.alloc_uninit::<TileMap>();
+        tile_map.tile_side_in_meters = 1.4;
+        tile_map.tile_side_in_pixels = 60;
+        tile_map.meters_to_pixels =
+            tile_map.tile_side_in_pixels as f32 / tile_map.tile_side_in_meters;
+        tile_map.chunk_shift = 4;
+        tile_map.chunk_mask = (1 << tile_map.chunk_shift) - 1;
+        tile_map.chunk_dim = 1 << tile_map.chunk_shift;
+        tile_map.tile_chunk_count_x = 128;
+        tile_map.tile_chunk_count_y = 128;
+        tile_map.tile_chunks = world_arena.alloc_array_uninit::<TileChunk>(
+            (tile_map.tile_chunk_count_x * tile_map.tile_chunk_count_y) as usize,
+        );
+
+        for tile_chunk_y in 0..tile_map.tile_chunk_count_y {
+            for tile_chunk_x in 0..tile_map.tile_chunk_count_x {
+                let chunk_dim = tile_map.chunk_dim;
+                let tile_chunk_count_x = tile_map.tile_chunk_count_x;
+                let tile_chunk = tile_map
+                    .tile_chunks
+                    .get_mut((tile_chunk_y * tile_chunk_count_x + tile_chunk_x) as usize)
+                    .unwrap();
+                tile_chunk.chunk_dim = chunk_dim;
+                tile_chunk.tiles = world_arena.alloc_array(0, (chunk_dim * chunk_dim) as usize);
+            }
+        }
+
+        for tile_chunk in tile_map.tile_chunks.iter() {
+            assert_eq!(
+                tile_chunk.tiles.len(),
+                (tile_map.chunk_dim * tile_map.chunk_dim) as usize
+            );
+        }
+
+        let tiles_per_width = 17;
+        let tiles_per_height = 9;
+
+        for screen_y in 0..32 {
+            for screen_x in 0..32 {
+                for tile_y in 0..tiles_per_height {
+                    for tile_x in 0..tiles_per_width {
+                        let abs_tile_x = screen_x * tiles_per_width + tile_x;
+                        let abs_tile_y = screen_y * tiles_per_height + tile_y;
+
+                        tile_map.set_tile_value(
+                            &mut world_arena,
+                            abs_tile_x,
+                            abs_tile_y,
+                            if tile_x == tile_y && tile_y % 2 == 0 {
+                                1
+                            } else {
+                                0
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
+        let world = world_arena.alloc(World { tile_map });
+        let mut player_p = TileMapPosition::default();
+        player_p.abs_tile_x = 1;
+        player_p.abs_tile_y = 3;
+        player_p.tile_rel_x = 5.0;
+        player_p.tile_rel_y = 5.0;
+        GameState {
+            world_arena,
+            world,
+            player_p,
+        }
     }
 
     pub fn update_and_render(
@@ -22,61 +284,10 @@ impl GameState {
         input: &GameInput,
         offscreen_buffer: &mut GameOffscreenBuffer,
     ) {
-        #[rustfmt::skip]
-        let temp_tiles = vec![
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        ];
+        let screen_center_x = offscreen_buffer.width as f32 / 2.0;
+        let screen_center_y = offscreen_buffer.height as f32 / 2.0;
 
-        let mut tiles = vec![0; 256 * 256];
-        for (y, row) in temp_tiles.chunks_exact(33).enumerate() {
-            for (x, tile_value) in row.iter().enumerate() {
-                tiles[y * 256 + x] = *tile_value;
-            }
-        }
-
-        let tile_side_in_meters = 1.4;
-        let tile_side_in_pixels = 60;
-
-        let center_x = offscreen_buffer.width as f32 / 2.0;
-        let center_y = offscreen_buffer.height as f32 / 2.0;
-
-        let tile_chunk = TileChunk { tiles };
-        let chunk_shift = 8;
-        let world = World {
-            tile_side_in_meters,
-            tile_side_in_pixels,
-            meters_to_pixels: tile_side_in_pixels as f32 / tile_side_in_meters,
-
-            chunk_shift,
-            chunk_mask: (1 << chunk_shift) - 1,
-            chunk_dim: 1 << chunk_shift,
-
-            tile_chunk_count_x: 1,
-            tile_chunk_count_y: 1,
-            tile_chunks: vec![tile_chunk],
-        };
-        for tile_map in world.tile_chunks.iter() {
-            assert_eq!(
-                tile_map.tiles.len(),
-                (world.chunk_dim * world.chunk_dim) as usize
-            );
-        }
+        let ref tile_map = self.world.tile_map;
 
         let player_height = 1.4;
         let player_width = 0.75 * player_height;
@@ -97,24 +308,28 @@ impl GameState {
                 if controller.move_right.ended_down != 0 {
                     d_player_x = 1.0;
                 }
-                d_player_x *= 2.0;
-                d_player_y *= 2.0;
+                let mut player_speed = 2.0;
+                if controller.action_up.ended_down != 0 {
+                    player_speed = 10.0;
+                }
+                d_player_x *= player_speed;
+                d_player_y *= player_speed;
                 let mut new_player_p = self.player_p;
                 new_player_p.tile_rel_x += d_player_x * input.dt;
                 new_player_p.tile_rel_y += d_player_y * input.dt;
-                new_player_p = world.recanonicalize_position(new_player_p);
+                new_player_p = tile_map.recanonicalize_position(new_player_p);
 
                 let mut player_left = new_player_p;
                 player_left.tile_rel_x -= 0.5 * player_width;
-                player_left = world.recanonicalize_position(player_left);
+                player_left = tile_map.recanonicalize_position(player_left);
 
                 let mut player_right = new_player_p;
                 player_right.tile_rel_x += 0.5 * player_width;
-                player_right = world.recanonicalize_position(player_right);
+                player_right = tile_map.recanonicalize_position(player_right);
 
-                if world.is_world_point_empty(player_left)
-                    && world.is_world_point_empty(player_right)
-                    && world.is_world_point_empty(new_player_p)
+                if tile_map.is_point_empty(player_left)
+                    && tile_map.is_point_empty(player_right)
+                    && tile_map.is_point_empty(new_player_p)
                 {
                     self.player_p = new_player_p;
                 }
@@ -141,7 +356,7 @@ impl GameState {
                 let x = (self.player_p.abs_tile_x as i32 + rel_x) as u32;
                 let y = (self.player_p.abs_tile_y as i32 + rel_y) as u32;
 
-                let tile_value = world.get_tile_value(x, y).unwrap_or(0);
+                let tile_value = tile_map.get_tile_value(x, y).unwrap_or(0);
 
                 let mut gray = 0.5;
                 if tile_value == 1 {
@@ -152,16 +367,20 @@ impl GameState {
                     gray = 0.0;
                 }
 
-                let min_x = center_x + rel_x as f32 * world.tile_side_in_pixels as f32;
-                let min_y = center_y - rel_y as f32 * world.tile_side_in_pixels as f32;
-                let max_x = min_x + world.tile_side_in_pixels as f32;
-                let max_y = min_y - world.tile_side_in_pixels as f32;
+                let cen_x = screen_center_x + rel_x as f32 * tile_map.tile_side_in_pixels as f32
+                    - tile_map.meters_to_pixels * self.player_p.tile_rel_x;
+                let cen_y = screen_center_y - rel_y as f32 * tile_map.tile_side_in_pixels as f32
+                    + tile_map.meters_to_pixels * self.player_p.tile_rel_y;
+                let min_x = cen_x - 0.5 * tile_map.tile_side_in_pixels as f32;
+                let min_y = cen_y - 0.5 * tile_map.tile_side_in_pixels as f32;
+                let max_x = min_x + tile_map.tile_side_in_pixels as f32;
+                let max_y = min_y + tile_map.tile_side_in_pixels as f32;
                 draw_rectangle(
                     &mut render_buffer,
                     min_x,
-                    max_y,
-                    max_x,
                     min_y,
+                    max_x,
+                    max_y,
                     gray,
                     gray,
                     gray,
@@ -172,13 +391,10 @@ impl GameState {
         let player_r = 1.0;
         let player_g = 1.0;
         let player_b = 0.0;
-        let player_left = center_x + world.meters_to_pixels * self.player_p.tile_rel_x
-            - 0.5 * world.meters_to_pixels * player_width;
-        let player_top = center_y
-            - world.meters_to_pixels * self.player_p.tile_rel_y
-            - world.meters_to_pixels * player_height;
-        let player_right = player_left + world.meters_to_pixels * player_width;
-        let player_bottom = player_top + world.meters_to_pixels * player_height;
+        let player_left = screen_center_x - 0.5 * tile_map.meters_to_pixels * player_width;
+        let player_top = screen_center_y - tile_map.meters_to_pixels * player_height;
+        let player_right = player_left + tile_map.meters_to_pixels * player_width;
+        let player_bottom = player_top + tile_map.meters_to_pixels * player_height;
         draw_rectangle(
             &mut render_buffer,
             player_left,
@@ -224,7 +440,7 @@ impl<'a> From<&'a mut GameOffscreenBuffer> for RenderBuffer<'a> {
         assert!(buffer.pitch >= buffer.width * buffer.bytes_per_pixel);
         RenderBuffer {
             bytes: unsafe {
-                std::slice::from_raw_parts_mut(
+                core::slice::from_raw_parts_mut(
                     buffer.memory as *mut u8,
                     (buffer.pitch * buffer.height) as usize,
                 )
@@ -235,109 +451,4 @@ impl<'a> From<&'a mut GameOffscreenBuffer> for RenderBuffer<'a> {
             bytes_per_pixel: buffer.bytes_per_pixel as usize,
         }
     }
-}
-
-#[derive(Clone)]
-struct TileChunk {
-    pub tiles: Vec<i32>,
-}
-
-impl TileChunk {}
-
-struct TileChunkRef<'a> {
-    pub tiles: &'a Vec<i32>,
-    pub chunk_dim: u32,
-}
-
-impl<'a> TileChunkRef<'a> {
-    pub fn get_tile_value(&self, tile_x: u32, tile_y: u32) -> Option<&i32> {
-        self.tiles.get((tile_y * self.chunk_dim + tile_x) as usize)
-    }
-}
-
-struct World {
-    pub tile_side_in_meters: f32,
-    pub tile_side_in_pixels: i32,
-    pub meters_to_pixels: f32,
-
-    pub chunk_shift: u32,
-    pub chunk_mask: u32,
-    pub chunk_dim: u32,
-
-    pub tile_chunk_count_x: u32,
-    pub tile_chunk_count_y: u32,
-    pub tile_chunks: Vec<TileChunk>,
-}
-
-impl World {
-    fn get_tile_chunk(&self, tile_chunk_x: u32, tile_chunk_y: u32) -> Option<TileChunkRef> {
-        self.tile_chunks
-            .get((tile_chunk_y * self.tile_chunk_count_x + tile_chunk_x) as usize)
-            .map(|tile_chunk| TileChunkRef {
-                tiles: &tile_chunk.tiles,
-                chunk_dim: self.chunk_dim,
-            })
-    }
-
-    fn recanonicalize_coord(&self, tile: &mut u32, tile_rel: &mut f32) {
-        let offset = (*tile_rel / self.tile_side_in_meters).floor() as i32;
-        // allow wrapping
-        *tile = (*tile as i32 + offset) as u32;
-        *tile_rel -= offset as f32 * self.tile_side_in_meters;
-
-        // TODO: Fix rounding bug
-        assert!(*tile_rel >= 0.0 && *tile_rel <= self.tile_side_in_meters);
-    }
-
-    pub fn recanonicalize_position(&self, pos: WorldPosition) -> WorldPosition {
-        let mut result = pos;
-
-        self.recanonicalize_coord(&mut result.abs_tile_x, &mut result.tile_rel_x);
-        self.recanonicalize_coord(&mut result.abs_tile_y, &mut result.tile_rel_y);
-
-        result
-    }
-
-    fn get_chunk_position(&self, abs_tile_x: u32, abs_tile_y: u32) -> TileChunkPosition {
-        let tile_chunk_x = abs_tile_x >> self.chunk_shift;
-        let tile_chunk_y = abs_tile_y >> self.chunk_shift;
-        let rel_tile_x = abs_tile_x & self.chunk_mask;
-        let rel_tile_y = abs_tile_y & self.chunk_mask;
-
-        TileChunkPosition {
-            tile_chunk_x,
-            tile_chunk_y,
-            rel_tile_x,
-            rel_tile_y,
-        }
-    }
-
-    pub fn get_tile_value(&self, abs_tile_x: u32, abs_tile_y: u32) -> Option<i32> {
-        let chunk_pos = self.get_chunk_position(abs_tile_x, abs_tile_y);
-        self.get_tile_chunk(chunk_pos.tile_chunk_x, chunk_pos.tile_chunk_y)
-            .and_then(|tile_chunk| {
-                tile_chunk
-                    .get_tile_value(chunk_pos.rel_tile_x, chunk_pos.rel_tile_y)
-                    .map(|x| *x)
-            })
-    }
-
-    pub fn is_world_point_empty(&self, pos: WorldPosition) -> bool {
-        self.get_tile_value(pos.abs_tile_x, pos.abs_tile_y) == Some(0)
-    }
-}
-
-struct TileChunkPosition {
-    tile_chunk_x: u32,
-    tile_chunk_y: u32,
-    rel_tile_x: u32,
-    rel_tile_y: u32,
-}
-
-#[derive(Copy, Clone, Default)]
-struct WorldPosition {
-    pub abs_tile_x: u32,
-    pub abs_tile_y: u32,
-    pub tile_rel_x: f32,
-    pub tile_rel_y: f32,
 }

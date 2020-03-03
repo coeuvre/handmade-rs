@@ -4,10 +4,18 @@
 name = "handmade"
 version = "0.1.0"
 dependencies = [
+ "libc 0.2.67 (registry+https://github.com/rust-lang/crates.io-index)",
  "software_renderer 0.1.0",
 ]
+
+[[package]]
+name = "libc"
+version = "0.2.67"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "software_renderer"
 version = "0.1.0"
 
+[metadata]
+"checksum libc 0.2.67 (registry+https://github.com/rust-lang/crates.io-index)" = "eb147597cdf94ed43ab7a9038716637d2d1bf2bc571da995d0028dec06bd3018"

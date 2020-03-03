@@ -1,16 +1,22 @@
+#![no_std]
+
+extern crate libc;
 extern crate software_renderer;
 
-mod game;
+use core::ffi::c_void;
+use libc::c_int;
 
-use game::GameState;
-use std::os::raw::{c_int, c_void};
+mod game;
+mod tile_map;
+
+use game::{GameState, MemoryArena};
 
 #[repr(C)]
 pub struct GameMemory {
     is_initialized: c_int,
-    permanent_storage_size: isize,
+    permanent_storage_size: usize,
     permanent_storage: *mut c_void,
-    transient_storage_size: isize,
+    transient_storage_size: usize,
     transient_storage: *mut c_void,
 }
 
@@ -77,10 +83,13 @@ pub unsafe extern "C" fn game_update_and_render(
     offscreen_buffer: *mut GameOffscreenBuffer,
 ) {
     let memory = &mut *memory;
-    let game_state = &mut *(memory.permanent_storage as *mut game::GameState);
+    let mut permanent_storage = MemoryArena::from_raw_parts(
+        memory.permanent_storage as *mut u8,
+        memory.permanent_storage_size,
+    );
+    let mut game_state = permanent_storage.alloc_uninit();
     if memory.is_initialized == 0 {
-        *game_state = GameState::default();
-        game_state.init();
+        *game_state = GameState::new(&mut permanent_storage);
         memory.is_initialized = 1;
     }
 
