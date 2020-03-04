@@ -1,11 +1,14 @@
+use core::ops::{Deref, DerefMut};
+
 use software_renderer::*;
 
+use crate::random::RANDOM_NUMBER_TABLE;
 use crate::GameInput;
 use crate::GameOffscreenBuffer;
 use crate::GameSoundBuffer;
 
 use crate::tile_map::*;
-use core::ops::{Deref, DerefMut};
+use core::ptr::null_mut;
 
 struct World {
     tile_map: ArenaObject<TileMap>,
@@ -29,6 +32,13 @@ pub struct ArenaArray<T> {
 }
 
 impl<T> ArenaArray<T> {
+    pub fn empty() -> ArenaArray<T> {
+        ArenaArray {
+            ptr: null_mut(),
+            len: 0,
+        }
+    }
+
     pub fn from_raw_parts(ptr: *mut T, len: usize) -> ArenaArray<T> {
         ArenaArray { ptr, len }
     }
@@ -209,59 +219,143 @@ impl GameState {
         let mut world_arena = permanent_storage.reserve(permanent_storage.remaining());
         let mut tile_map = world_arena.alloc_uninit::<TileMap>();
         tile_map.tile_side_in_meters = 1.4;
-        tile_map.tile_side_in_pixels = 60;
-        tile_map.meters_to_pixels =
-            tile_map.tile_side_in_pixels as f32 / tile_map.tile_side_in_meters;
         tile_map.chunk_shift = 4;
         tile_map.chunk_mask = (1 << tile_map.chunk_shift) - 1;
         tile_map.chunk_dim = 1 << tile_map.chunk_shift;
         tile_map.tile_chunk_count_x = 128;
         tile_map.tile_chunk_count_y = 128;
+        tile_map.tile_chunk_count_z = 2;
         tile_map.tile_chunks = world_arena.alloc_array_uninit::<TileChunk>(
-            (tile_map.tile_chunk_count_x * tile_map.tile_chunk_count_y) as usize,
+            (tile_map.tile_chunk_count_x
+                * tile_map.tile_chunk_count_y
+                * tile_map.tile_chunk_count_z) as usize,
         );
 
         for tile_chunk_y in 0..tile_map.tile_chunk_count_y {
             for tile_chunk_x in 0..tile_map.tile_chunk_count_x {
                 let chunk_dim = tile_map.chunk_dim;
-                let tile_chunk_count_x = tile_map.tile_chunk_count_x;
                 let tile_chunk = tile_map
-                    .tile_chunks
-                    .get_mut((tile_chunk_y * tile_chunk_count_x + tile_chunk_x) as usize)
+                    .get_tile_chunk_mut(tile_chunk_x, tile_chunk_y, 0)
                     .unwrap();
                 tile_chunk.chunk_dim = chunk_dim;
-                tile_chunk.tiles = world_arena.alloc_array(0, (chunk_dim * chunk_dim) as usize);
+                tile_chunk.tiles = ArenaArray::empty();
             }
         }
 
-        for tile_chunk in tile_map.tile_chunks.iter() {
-            assert_eq!(
-                tile_chunk.tiles.len(),
-                (tile_map.chunk_dim * tile_map.chunk_dim) as usize
-            );
-        }
+        // for tile_chunk in tile_map.tile_chunks.iter() {
+        //     assert_eq!(
+        //         tile_chunk.tiles.len(),
+        //         (tile_map.chunk_dim * tile_map.chunk_dim) as usize
+        //     );
+        // }
 
         let tiles_per_width = 17;
         let tiles_per_height = 9;
+        let mut screen_x = 0;
+        let mut screen_y = 0;
+        let mut random_number_index = 0;
+        let mut door_left = false;
+        let mut door_right = false;
+        let mut door_top = false;
+        let mut door_bottom = false;
+        let mut door_up = false;
+        let mut door_down = false;
+        let mut abs_tile_z = 0;
+        for _ in 0..100 {
+            assert!(random_number_index < RANDOM_NUMBER_TABLE.len());
+            let random_choice = if door_up || door_down {
+                RANDOM_NUMBER_TABLE[random_number_index] % 2
+            } else {
+                RANDOM_NUMBER_TABLE[random_number_index] % 3
+            };
+            random_number_index += 1;
 
-        for screen_y in 0..32 {
-            for screen_x in 0..32 {
-                for tile_y in 0..tiles_per_height {
-                    for tile_x in 0..tiles_per_width {
-                        let abs_tile_x = screen_x * tiles_per_width + tile_x;
-                        let abs_tile_y = screen_y * tiles_per_height + tile_y;
-
-                        tile_map.set_tile_value(
-                            &mut world_arena,
-                            abs_tile_x,
-                            abs_tile_y,
-                            if tile_x == tile_y && tile_y % 2 == 0 {
-                                1
-                            } else {
-                                0
-                            },
-                        );
+            match random_choice {
+                2 => {
+                    if abs_tile_z == 0 {
+                        door_up = true;
+                    } else {
+                        door_down = true;
                     }
+                }
+                1 => {
+                    door_top = true;
+                }
+                _ => {
+                    door_right = true;
+                }
+            }
+
+            for tile_y in 0..tiles_per_height {
+                for tile_x in 0..tiles_per_width {
+                    let abs_tile_x = screen_x * tiles_per_width + tile_x;
+                    let abs_tile_y = screen_y * tiles_per_height + tile_y;
+
+                    let mut tile_value = 1;
+                    if tile_x == 0 && (tile_y != tiles_per_height / 2 || !door_left) {
+                        tile_value = 2;
+                    }
+
+                    if tile_x == (tiles_per_width - 1)
+                        && (tile_y != tiles_per_height / 2 || !door_right)
+                    {
+                        tile_value = 2;
+                    }
+
+                    if tile_y == 0 && (tile_x != tiles_per_width / 2 || !door_bottom) {
+                        tile_value = 2;
+                    }
+
+                    if tile_y == (tiles_per_height - 1)
+                        && (tile_x != tiles_per_width / 2 || !door_top)
+                    {
+                        tile_value = 2;
+                    }
+
+                    if tile_x == 10 && tile_y == 6 {
+                        if door_up {
+                            tile_value = 3;
+                        } else if door_down {
+                            tile_value = 4;
+                        }
+                    }
+
+                    tile_map.set_tile_value(
+                        &mut world_arena,
+                        abs_tile_x,
+                        abs_tile_y,
+                        abs_tile_z,
+                        tile_value,
+                    );
+                }
+            }
+
+            door_left = door_right;
+            door_bottom = door_top;
+            if door_up {
+                door_down = true;
+                door_up = false;
+            } else if door_down {
+                door_up = true;
+                door_down = false;
+            }
+
+            door_right = false;
+            door_top = false;
+
+            match random_choice {
+                2 => {
+                    if abs_tile_z == 0 {
+                        abs_tile_z = 1;
+                    } else {
+                        abs_tile_z = 0;
+                    }
+                }
+                1 => {
+                    screen_y += 1;
+                }
+                _ => {
+                    screen_x += 1;
                 }
             }
         }
@@ -270,6 +364,7 @@ impl GameState {
         let mut player_p = TileMapPosition::default();
         player_p.abs_tile_x = 1;
         player_p.abs_tile_y = 3;
+        player_p.abs_tile_z = 0;
         player_p.tile_rel_x = 5.0;
         player_p.tile_rel_y = 5.0;
         GameState {
@@ -288,6 +383,9 @@ impl GameState {
         let screen_center_y = offscreen_buffer.height as f32 / 2.0;
 
         let ref tile_map = self.world.tile_map;
+
+        let tile_side_in_pixels = 60.0;
+        let meters_to_pixels = tile_side_in_pixels / tile_map.tile_side_in_meters;
 
         let player_height = 1.4;
         let player_width = 0.75 * player_height;
@@ -346,7 +444,7 @@ impl GameState {
             0.0,
             screen_width as f32,
             screen_height as f32,
-            0.0,
+            1.0,
             0.0,
             0.0,
         );
@@ -356,45 +454,47 @@ impl GameState {
                 let x = (self.player_p.abs_tile_x as i32 + rel_x) as u32;
                 let y = (self.player_p.abs_tile_y as i32 + rel_y) as u32;
 
-                let tile_value = tile_map.get_tile_value(x, y).unwrap_or(0);
+                if let Some(tile_value) = tile_map.get_tile_value(x, y, self.player_p.abs_tile_z) {
+                    let mut gray = 0.5;
+                    if tile_value == 2 {
+                        gray = 1.0;
+                    } else if tile_value > 2 {
+                        gray = 0.25;
+                    }
 
-                let mut gray = 0.5;
-                if tile_value == 1 {
-                    gray = 1.0;
+                    if x == self.player_p.abs_tile_x && y == self.player_p.abs_tile_y {
+                        gray = 0.0;
+                    }
+
+                    let cen_x = screen_center_x + rel_x as f32 * tile_side_in_pixels as f32
+                        - meters_to_pixels * self.player_p.tile_rel_x;
+                    let cen_y = screen_center_y - rel_y as f32 * tile_side_in_pixels as f32
+                        + meters_to_pixels * self.player_p.tile_rel_y;
+                    let min_x = cen_x - 0.5 * tile_side_in_pixels as f32;
+                    let min_y = cen_y - 0.5 * tile_side_in_pixels as f32;
+                    let max_x = min_x + tile_side_in_pixels as f32;
+                    let max_y = min_y + tile_side_in_pixels as f32;
+                    draw_rectangle(
+                        &mut render_buffer,
+                        min_x,
+                        min_y,
+                        max_x,
+                        max_y,
+                        gray,
+                        gray,
+                        gray,
+                    );
                 }
-
-                if x == self.player_p.abs_tile_x && y == self.player_p.abs_tile_y {
-                    gray = 0.0;
-                }
-
-                let cen_x = screen_center_x + rel_x as f32 * tile_map.tile_side_in_pixels as f32
-                    - tile_map.meters_to_pixels * self.player_p.tile_rel_x;
-                let cen_y = screen_center_y - rel_y as f32 * tile_map.tile_side_in_pixels as f32
-                    + tile_map.meters_to_pixels * self.player_p.tile_rel_y;
-                let min_x = cen_x - 0.5 * tile_map.tile_side_in_pixels as f32;
-                let min_y = cen_y - 0.5 * tile_map.tile_side_in_pixels as f32;
-                let max_x = min_x + tile_map.tile_side_in_pixels as f32;
-                let max_y = min_y + tile_map.tile_side_in_pixels as f32;
-                draw_rectangle(
-                    &mut render_buffer,
-                    min_x,
-                    min_y,
-                    max_x,
-                    max_y,
-                    gray,
-                    gray,
-                    gray,
-                );
             }
         }
 
         let player_r = 1.0;
         let player_g = 1.0;
         let player_b = 0.0;
-        let player_left = screen_center_x - 0.5 * tile_map.meters_to_pixels * player_width;
-        let player_top = screen_center_y - tile_map.meters_to_pixels * player_height;
-        let player_right = player_left + tile_map.meters_to_pixels * player_width;
-        let player_bottom = player_top + tile_map.meters_to_pixels * player_height;
+        let player_left = screen_center_x - 0.5 * meters_to_pixels * player_width;
+        let player_top = screen_center_y - meters_to_pixels * player_height;
+        let player_right = player_left + meters_to_pixels * player_width;
+        let player_bottom = player_top + meters_to_pixels * player_height;
         draw_rectangle(
             &mut render_buffer,
             player_left,

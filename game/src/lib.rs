@@ -7,6 +7,7 @@ use core::ffi::c_void;
 use libc::c_int;
 
 mod game;
+mod random;
 mod tile_map;
 
 use game::{GameState, MemoryArena};
