@@ -6,8 +6,16 @@ pub struct TileMapPosition {
     pub abs_tile_x: u32,
     pub abs_tile_y: u32,
     pub abs_tile_z: u32,
-    pub tile_rel_x: f32,
-    pub tile_rel_y: f32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+}
+
+impl TileMapPosition {
+    pub fn is_on_same_tile(&self, other: &TileMapPosition) -> bool {
+        self.abs_tile_x == other.abs_tile_x
+            && self.abs_tile_y == other.abs_tile_y
+            && self.abs_tile_z == other.abs_tile_z
+    }
 }
 
 pub struct TileMap {
@@ -72,8 +80,8 @@ impl TileMap {
     pub fn recanonicalize_position(&self, pos: TileMapPosition) -> TileMapPosition {
         let mut result = pos;
 
-        self.recanonicalize_coord(&mut result.abs_tile_x, &mut result.tile_rel_x);
-        self.recanonicalize_coord(&mut result.abs_tile_y, &mut result.tile_rel_y);
+        self.recanonicalize_coord(&mut result.abs_tile_x, &mut result.offset_x);
+        self.recanonicalize_coord(&mut result.abs_tile_y, &mut result.offset_y);
 
         result
     }
@@ -117,7 +125,7 @@ impl TileMap {
         if let Some(tile_value) =
             self.get_tile_value(pos.abs_tile_x, pos.abs_tile_y, pos.abs_tile_z)
         {
-            return tile_value == 1;
+            return tile_value == 1 || tile_value == 3 || tile_value == 4;
         }
         true
     }

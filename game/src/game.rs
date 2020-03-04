@@ -9,6 +9,7 @@ use crate::GameSoundBuffer;
 
 use crate::tile_map::*;
 use core::ptr::null_mut;
+use debug_platform_read_entire_file;
 
 struct World {
     tile_map: ArenaObject<TileMap>,
@@ -18,6 +19,7 @@ pub struct GameState {
     world_arena: MemoryArena,
     world: ArenaObject<World>,
     player_p: TileMapPosition,
+    pixels: *const u8,
 }
 
 pub struct MemoryArena {
@@ -216,6 +218,8 @@ impl MemoryArena {
 
 impl GameState {
     pub unsafe fn new(permanent_storage: &mut MemoryArena) -> GameState {
+        let pixels = debug_load_bmp("test/test_background.bmp\0".as_ptr() as *const i8);
+
         let mut world_arena = permanent_storage.reserve(permanent_storage.remaining());
         let mut tile_map = world_arena.alloc_uninit::<TileMap>();
         tile_map.tile_side_in_meters = 1.4;
@@ -231,14 +235,16 @@ impl GameState {
                 * tile_map.tile_chunk_count_z) as usize,
         );
 
-        for tile_chunk_y in 0..tile_map.tile_chunk_count_y {
-            for tile_chunk_x in 0..tile_map.tile_chunk_count_x {
-                let chunk_dim = tile_map.chunk_dim;
-                let tile_chunk = tile_map
-                    .get_tile_chunk_mut(tile_chunk_x, tile_chunk_y, 0)
-                    .unwrap();
-                tile_chunk.chunk_dim = chunk_dim;
-                tile_chunk.tiles = ArenaArray::empty();
+        for tile_chunk_z in 0..tile_map.tile_chunk_count_z {
+            for tile_chunk_y in 0..tile_map.tile_chunk_count_y {
+                for tile_chunk_x in 0..tile_map.tile_chunk_count_x {
+                    let chunk_dim = tile_map.chunk_dim;
+                    let tile_chunk = tile_map
+                        .get_tile_chunk_mut(tile_chunk_x, tile_chunk_y, tile_chunk_z)
+                        .unwrap();
+                    tile_chunk.chunk_dim = chunk_dim;
+                    tile_chunk.tiles = ArenaArray::empty();
+                }
             }
         }
 
@@ -270,8 +276,10 @@ impl GameState {
             };
             random_number_index += 1;
 
+            let mut created_z_door = false;
             match random_choice {
                 2 => {
+                    created_z_door = true;
                     if abs_tile_z == 0 {
                         door_up = true;
                     } else {
@@ -279,10 +287,10 @@ impl GameState {
                     }
                 }
                 1 => {
-                    door_top = true;
+                    door_right = true;
                 }
                 _ => {
-                    door_right = true;
+                    door_top = true;
                 }
             }
 
@@ -332,11 +340,11 @@ impl GameState {
 
             door_left = door_right;
             door_bottom = door_top;
-            if door_up {
-                door_down = true;
+            if created_z_door {
+                door_up = !door_up;
+                door_down = !door_down;
+            } else {
                 door_up = false;
-            } else if door_down {
-                door_up = true;
                 door_down = false;
             }
 
@@ -352,10 +360,10 @@ impl GameState {
                     }
                 }
                 1 => {
-                    screen_y += 1;
+                    screen_x += 1;
                 }
                 _ => {
-                    screen_x += 1;
+                    screen_y += 1;
                 }
             }
         }
@@ -365,12 +373,13 @@ impl GameState {
         player_p.abs_tile_x = 1;
         player_p.abs_tile_y = 3;
         player_p.abs_tile_z = 0;
-        player_p.tile_rel_x = 5.0;
-        player_p.tile_rel_y = 5.0;
+        player_p.offset_x = 5.0;
+        player_p.offset_y = 5.0;
         GameState {
             world_arena,
             world,
             player_p,
+            pixels,
         }
     }
 
@@ -413,22 +422,38 @@ impl GameState {
                 d_player_x *= player_speed;
                 d_player_y *= player_speed;
                 let mut new_player_p = self.player_p;
-                new_player_p.tile_rel_x += d_player_x * input.dt;
-                new_player_p.tile_rel_y += d_player_y * input.dt;
+                new_player_p.offset_x += d_player_x * input.dt;
+                new_player_p.offset_y += d_player_y * input.dt;
                 new_player_p = tile_map.recanonicalize_position(new_player_p);
 
                 let mut player_left = new_player_p;
-                player_left.tile_rel_x -= 0.5 * player_width;
+                player_left.offset_x -= 0.5 * player_width;
                 player_left = tile_map.recanonicalize_position(player_left);
 
                 let mut player_right = new_player_p;
-                player_right.tile_rel_x += 0.5 * player_width;
+                player_right.offset_x += 0.5 * player_width;
                 player_right = tile_map.recanonicalize_position(player_right);
 
                 if tile_map.is_point_empty(player_left)
                     && tile_map.is_point_empty(player_right)
                     && tile_map.is_point_empty(new_player_p)
                 {
+                    if !self.player_p.is_on_same_tile(&new_player_p) {
+                        match tile_map.get_tile_value(
+                            new_player_p.abs_tile_x,
+                            new_player_p.abs_tile_y,
+                            new_player_p.abs_tile_z,
+                        ) {
+                            Some(3) => {
+                                new_player_p.abs_tile_z += 1;
+                            }
+                            Some(4) => {
+                                new_player_p.abs_tile_z -= 1;
+                            }
+                            _ => {}
+                        }
+                    }
+
                     self.player_p = new_player_p;
                 }
             }
@@ -455,21 +480,21 @@ impl GameState {
                 let y = (self.player_p.abs_tile_y as i32 + rel_y) as u32;
 
                 if let Some(tile_value) = tile_map.get_tile_value(x, y, self.player_p.abs_tile_z) {
-                    let mut gray = 0.5;
-                    if tile_value == 2 {
-                        gray = 1.0;
-                    } else if tile_value > 2 {
-                        gray = 0.25;
-                    }
+                    let mut gray = match tile_value {
+                        2 => 1.0,
+                        3 => 0.25,
+                        4 => 0.1,
+                        _ => 0.5,
+                    };
 
                     if x == self.player_p.abs_tile_x && y == self.player_p.abs_tile_y {
                         gray = 0.0;
                     }
 
                     let cen_x = screen_center_x + rel_x as f32 * tile_side_in_pixels as f32
-                        - meters_to_pixels * self.player_p.tile_rel_x;
+                        - meters_to_pixels * self.player_p.offset_x;
                     let cen_y = screen_center_y - rel_y as f32 * tile_side_in_pixels as f32
-                        + meters_to_pixels * self.player_p.tile_rel_y;
+                        + meters_to_pixels * self.player_p.offset_y;
                     let min_x = cen_x - 0.5 * tile_side_in_pixels as f32;
                     let min_y = cen_y - 0.5 * tile_side_in_pixels as f32;
                     let max_x = min_x + tile_side_in_pixels as f32;
@@ -551,4 +576,25 @@ impl<'a> From<&'a mut GameOffscreenBuffer> for RenderBuffer<'a> {
             bytes_per_pixel: buffer.bytes_per_pixel as usize,
         }
     }
+}
+
+#[repr(C, packed(1))]
+struct BitmapHeader {
+    file_type: u16,
+    file_size: u32,
+    reserved1: u16,
+    reserved2: u16,
+    bitmap_offset: u32,
+    size: u32,
+    width: i32,
+    height: i32,
+    planes: u16,
+    bits_per_pixel: u16,
+}
+
+unsafe fn debug_load_bmp(file_name: *const i8) -> *const u8 {
+    let result = debug_platform_read_entire_file(file_name);
+    let base = result.contents as *mut u8;
+    let header = &*(base as *mut BitmapHeader);
+    base.offset(header.bitmap_offset as isize)
 }

@@ -4,7 +4,8 @@ extern crate libc;
 extern crate software_renderer;
 
 use core::ffi::c_void;
-use libc::c_int;
+use core::ptr::null_mut;
+use libc::{c_char, c_int};
 
 mod game;
 mod random;
@@ -13,13 +14,34 @@ mod tile_map;
 use game::{GameState, MemoryArena};
 
 #[repr(C)]
+pub struct DebugReadFileResult {
+    content_size: u32,
+    contents: *mut c_void,
+}
+
+type DebugPlatformReadEntireFile = extern "C" fn(file_name: *const c_char) -> DebugReadFileResult;
+type DebugPlatformFreeFileMemory = extern "C" fn(memory: *mut c_void);
+type DebugPlatformWriteEntireFile =
+    extern "C" fn(file_name: *const c_char, memory_size: u32, memory: *const c_void) -> i32;
+
+pub fn debug_platform_read_entire_file(file_name: *const i8) -> DebugReadFileResult {
+    unsafe { ((*GAME_MEMORY).debug_platform_read_entire_file)(file_name) }
+}
+
+#[repr(C)]
 pub struct GameMemory {
     is_initialized: c_int,
     permanent_storage_size: usize,
     permanent_storage: *mut c_void,
     transient_storage_size: usize,
     transient_storage: *mut c_void,
+
+    debug_platform_read_entire_file: DebugPlatformReadEntireFile,
+    debug_platform_free_file_memory: DebugPlatformFreeFileMemory,
+    debug_platform_write_entire_file: DebugPlatformWriteEntireFile,
 }
+
+static mut GAME_MEMORY: *mut GameMemory = null_mut();
 
 #[repr(C)]
 pub struct GameOffscreenBuffer {
@@ -83,6 +105,8 @@ pub unsafe extern "C" fn game_update_and_render(
     input: *const GameInput,
     offscreen_buffer: *mut GameOffscreenBuffer,
 ) {
+    GAME_MEMORY = memory;
+
     let memory = &mut *memory;
     let mut permanent_storage = MemoryArena::from_raw_parts(
         memory.permanent_storage as *mut u8,
