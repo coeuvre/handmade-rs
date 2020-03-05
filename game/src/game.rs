@@ -618,24 +618,15 @@ struct BitmapHeader {
     blue_mask: u32,
 }
 
-pub struct LoadedBitmap {
-    pub pixels: *mut u32,
-    pub width: usize,
-    pub height: usize,
-}
-
-impl LoadedBitmap {
-    pub fn rows(&self) -> impl Iterator<Item = &[u32]> {
-        self.pixels().chunks_exact(self.width).rev()
+// TODO: use intrinsics _BitScanForward
+fn find_least_significant_set_bit(value: u32) -> Option<u32> {
+    for i in 0..32 {
+        if value & (1 << i) != 0 {
+            return Some(i);
+        }
     }
 
-    pub fn pixels(&self) -> &[u32] {
-        unsafe { core::slice::from_raw_parts(self.pixels, self.width * self.height) }
-    }
-
-    pub fn pixels_mut(&mut self) -> &mut [u32] {
-        unsafe { core::slice::from_raw_parts_mut(self.pixels, self.width * self.height) }
-    }
+    None
 }
 
 unsafe fn debug_load_bmp(file_name: *const i8) -> Option<LoadedBitmap> {
@@ -643,16 +634,31 @@ unsafe fn debug_load_bmp(file_name: *const i8) -> Option<LoadedBitmap> {
     if result.content_size > 0 {
         let base = result.contents as *mut u8;
         let header = &*(base as *mut BitmapHeader);
+        assert_eq!(header.compression, 3);
+
         let mut bitmap = LoadedBitmap {
             pixels: base.offset(header.bitmap_offset as isize) as *mut u32,
             width: header.width as usize,
             height: header.height as usize,
         };
 
-        let width = bitmap.width;
-        for row in bitmap.pixels_mut().chunks_exact_mut(width as usize) {
+        let red_mask = header.red_mask;
+        let green_mask = header.green_mask;
+        let blue_mask = header.blue_mask;
+        let alpha_mask = !(red_mask | green_mask | blue_mask);
+        let red_shift = find_least_significant_set_bit(red_mask).unwrap();
+        let green_shift = find_least_significant_set_bit(green_mask).unwrap();
+        let blue_shift = find_least_significant_set_bit(blue_mask).unwrap();
+        let alpha_shift = find_least_significant_set_bit(alpha_mask).unwrap();
+
+        let width = bitmap.width as usize;
+        for row in bitmap.pixels_mut().chunks_exact_mut(width) {
             for pixel in row {
-                *pixel = ((*pixel) >> 8) | ((*pixel) << 24);
+                let val = *pixel;
+                *pixel = ((val >> alpha_shift) << 24)
+                    | ((val >> red_shift) << 16)
+                    | ((val >> green_shift) << 8)
+                    | ((val >> blue_shift) << 0);
             }
         }
 
@@ -660,59 +666,4 @@ unsafe fn debug_load_bmp(file_name: *const i8) -> Option<LoadedBitmap> {
     }
 
     None
-}
-
-pub fn draw_bitmap(buffer: &mut RenderBuffer, bitmap: &LoadedBitmap, x: f32, y: f32) {
-    assert_eq!(buffer.bytes_per_pixel, 4);
-
-    let mut width = bitmap.width as isize;
-    let mut height = bitmap.height as isize;
-    let mut src_min_x = 0;
-    let mut src_min_y = 0;
-    let mut dst_min_x = x.round() as isize;
-    let mut dst_min_y = y.round() as isize;
-    if dst_min_x < 0 {
-        width += dst_min_x;
-        src_min_x -= dst_min_x;
-        dst_min_x = 0;
-    }
-    if dst_min_y < 0 {
-        height += dst_min_y;
-        src_min_y -= dst_min_y;
-        dst_min_y = 0;
-    }
-
-    let mut dst_max_x = dst_min_x + width;
-    let mut dst_max_y = dst_min_y + height;
-    if dst_max_x > buffer.width as isize {
-        width -= dst_max_x - buffer.width as isize;
-        dst_max_x = dst_min_x + width;
-    }
-    if dst_max_y > buffer.height as isize {
-        height -= dst_max_y - buffer.height as isize;
-        dst_max_y = dst_min_y + height;
-    }
-
-    if dst_min_x >= dst_max_x || dst_min_y >= dst_max_y {
-        return;
-    }
-
-    for (dst_row, src_row) in buffer
-        .bytes
-        .chunks_exact_mut(buffer.pitch)
-        .skip(dst_min_y as usize)
-        .take(height as usize)
-        .zip(bitmap.rows().skip(src_min_y as usize).take(height as usize))
-    {
-        for (dst, src) in dst_row
-            .chunks_exact_mut(buffer.bytes_per_pixel)
-            .skip(dst_min_x as usize)
-            .take(width as usize)
-            .zip(src_row.iter().skip(src_min_x as usize).take(width as usize))
-        {
-            unsafe {
-                *(dst.as_mut_ptr() as *mut u32) = *src;
-            }
-        }
-    }
 }

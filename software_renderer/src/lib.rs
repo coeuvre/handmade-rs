@@ -75,3 +75,90 @@ pub fn draw_rectangle(
         }
     }
 }
+
+pub struct LoadedBitmap {
+    pub pixels: *mut u32,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl LoadedBitmap {
+    pub fn rows(&self) -> impl Iterator<Item = &[u32]> {
+        self.pixels().chunks_exact(self.width).rev()
+    }
+
+    pub fn pixels(&self) -> &[u32] {
+        unsafe { core::slice::from_raw_parts(self.pixels, self.width * self.height) }
+    }
+
+    pub fn pixels_mut(&mut self) -> &mut [u32] {
+        unsafe { core::slice::from_raw_parts_mut(self.pixels, self.width * self.height) }
+    }
+}
+
+pub fn draw_bitmap(buffer: &mut RenderBuffer, bitmap: &LoadedBitmap, x: f32, y: f32) {
+    assert_eq!(buffer.bytes_per_pixel, 4);
+
+    let mut width = bitmap.width as isize;
+    let mut height = bitmap.height as isize;
+    let mut src_min_x = 0;
+    let mut src_min_y = 0;
+    let mut dst_min_x = x.round() as isize;
+    let mut dst_min_y = y.round() as isize;
+    if dst_min_x < 0 {
+        width += dst_min_x;
+        src_min_x -= dst_min_x;
+        dst_min_x = 0;
+    }
+    if dst_min_y < 0 {
+        height += dst_min_y;
+        src_min_y -= dst_min_y;
+        dst_min_y = 0;
+    }
+
+    let mut dst_max_x = dst_min_x + width;
+    let mut dst_max_y = dst_min_y + height;
+    if dst_max_x > buffer.width as isize {
+        width -= dst_max_x - buffer.width as isize;
+        dst_max_x = dst_min_x + width;
+    }
+    if dst_max_y > buffer.height as isize {
+        height -= dst_max_y - buffer.height as isize;
+        dst_max_y = dst_min_y + height;
+    }
+
+    if dst_min_x >= dst_max_x || dst_min_y >= dst_max_y {
+        return;
+    }
+
+    for (dst_row, src_row) in buffer
+        .bytes
+        .chunks_exact_mut(buffer.pitch)
+        .skip(dst_min_y as usize)
+        .take(height as usize)
+        .zip(bitmap.rows().skip(src_min_y as usize).take(height as usize))
+    {
+        for (dst, src) in dst_row
+            .chunks_exact_mut(buffer.bytes_per_pixel)
+            .skip(dst_min_x as usize)
+            .take(width as usize)
+            .zip(src_row.iter().skip(src_min_x as usize).take(width as usize))
+        {
+            unsafe {
+                let a = ((*src >> 24) & 0xFF) as f32 / 255.0;
+                let sr = ((*src >> 16) & 0xFF) as f32 / 255.0;
+                let sg = ((*src >> 8) & 0xFF) as f32 / 255.0;
+                let sb = ((*src >> 0) & 0xFF) as f32 / 255.0;
+                let db = *dst.get_unchecked(0) as f32 / 255.0;
+                let dg = *dst.get_unchecked(1) as f32 / 255.0;
+                let dr = *dst.get_unchecked(2) as f32 / 255.0;
+                let r = (1.0 - a) * dr + a * sr;
+                let g = (1.0 - a) * dg + a * sg;
+                let b = (1.0 - a) * db + a * sb;
+                *dst.get_unchecked_mut(0) = (b * 255.0).round() as u8;
+                *dst.get_unchecked_mut(1) = (g * 255.0).round() as u8;
+                *dst.get_unchecked_mut(2) = (r * 255.0).round() as u8;
+            }
+        }
+    }
+}

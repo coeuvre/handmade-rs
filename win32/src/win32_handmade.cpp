@@ -1,5 +1,6 @@
 #include "../../game/handmade_platform.h"
 #include "win32_handmade.h"
+#include <stdio.h>
 
 static void cat_strings(size_t source_a_count, char *source_a,
                         size_t source_b_count, char *source_b,
@@ -1080,7 +1081,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
 
             float fps = 0.0; //(float) PERF_COUNT_FREQUENCY / (float) counter_elapsed;
             char buf[1024];
-            wsprintf(buf, "%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, (float) cycles_elapsed / 1000000.0f);
+            sprintf(buf, "%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, (float) cycles_elapsed / 1000000.0f);
             OutputDebugString(buf);
 #endif
 
