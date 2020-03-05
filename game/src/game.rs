@@ -15,13 +15,6 @@ struct World {
     tile_map: ArenaObject<TileMap>,
 }
 
-pub struct GameState {
-    world_arena: MemoryArena,
-    world: ArenaObject<World>,
-    player_p: TileMapPosition,
-    pixels: *const u8,
-}
-
 pub struct MemoryArena {
     base: *mut u8,
     size: usize,
@@ -216,9 +209,25 @@ impl MemoryArena {
     }
 }
 
+pub struct GameState {
+    world_arena: MemoryArena,
+    world: ArenaObject<World>,
+    player_p: TileMapPosition,
+    backdrop: LoadedBitmap,
+    hero_head: LoadedBitmap,
+    hero_cape: LoadedBitmap,
+    hero_torso: LoadedBitmap,
+}
+
 impl GameState {
     pub unsafe fn new(permanent_storage: &mut MemoryArena) -> GameState {
-        let pixels = debug_load_bmp("test/test_background.bmp\0".as_ptr() as *const i8);
+        let backdrop = debug_load_bmp("test/test_background.bmp\0".as_ptr() as *const i8).unwrap();
+        let hero_head =
+            debug_load_bmp("test/test_hero_front_head.bmp\0".as_ptr() as *const i8).unwrap();
+        let hero_cape =
+            debug_load_bmp("test/test_hero_front_cape.bmp\0".as_ptr() as *const i8).unwrap();
+        let hero_torso =
+            debug_load_bmp("test/test_hero_front_torso.bmp\0".as_ptr() as *const i8).unwrap();
 
         let mut world_arena = permanent_storage.reserve(permanent_storage.remaining());
         let mut tile_map = world_arena.alloc_uninit::<TileMap>();
@@ -379,7 +388,10 @@ impl GameState {
             world_arena,
             world,
             player_p,
-            pixels,
+            backdrop,
+            hero_head,
+            hero_cape,
+            hero_torso,
         }
     }
 
@@ -463,16 +475,17 @@ impl GameState {
         let screen_width = render_buffer.width;
         let screen_height = render_buffer.height;
 
-        draw_rectangle(
-            &mut render_buffer,
-            0.0,
-            0.0,
-            screen_width as f32,
-            screen_height as f32,
-            1.0,
-            0.0,
-            0.0,
-        );
+        draw_bitmap(&mut render_buffer, &self.backdrop, 0.0, 0.0);
+        // draw_rectangle(
+        //     &mut render_buffer,
+        //     0.0,
+        //     0.0,
+        //     screen_width as f32,
+        //     screen_height as f32,
+        //     1.0,
+        //     0.0,
+        //     0.0,
+        // );
 
         for rel_y in -10..=10 {
             for rel_x in -20..=20 {
@@ -480,6 +493,9 @@ impl GameState {
                 let y = (self.player_p.abs_tile_y as i32 + rel_y) as u32;
 
                 if let Some(tile_value) = tile_map.get_tile_value(x, y, self.player_p.abs_tile_z) {
+                    if tile_value < 2 {
+                        continue;
+                    }
                     let mut gray = match tile_value {
                         2 => 1.0,
                         3 => 0.25,
@@ -530,6 +546,7 @@ impl GameState {
             player_g,
             player_b,
         );
+        draw_bitmap(&mut render_buffer, &self.hero_head, player_left, player_top);
     }
 
     pub fn get_sound_samples(&mut self, sound_buffer: &mut GameSoundBuffer) {
@@ -590,11 +607,112 @@ struct BitmapHeader {
     height: i32,
     planes: u16,
     bits_per_pixel: u16,
+    compression: u32,
+    size_of_bitmap: u32,
+    horz_resolution: i32,
+    vert_resolution: i32,
+    colors_used: u32,
+    colors_important: u32,
+    red_mask: u32,
+    green_mask: u32,
+    blue_mask: u32,
 }
 
-unsafe fn debug_load_bmp(file_name: *const i8) -> *const u8 {
+pub struct LoadedBitmap {
+    pub pixels: *mut u32,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl LoadedBitmap {
+    pub fn rows(&self) -> impl Iterator<Item = &[u32]> {
+        self.pixels().chunks_exact(self.width).rev()
+    }
+
+    pub fn pixels(&self) -> &[u32] {
+        unsafe { core::slice::from_raw_parts(self.pixels, self.width * self.height) }
+    }
+
+    pub fn pixels_mut(&mut self) -> &mut [u32] {
+        unsafe { core::slice::from_raw_parts_mut(self.pixels, self.width * self.height) }
+    }
+}
+
+unsafe fn debug_load_bmp(file_name: *const i8) -> Option<LoadedBitmap> {
     let result = debug_platform_read_entire_file(file_name);
-    let base = result.contents as *mut u8;
-    let header = &*(base as *mut BitmapHeader);
-    base.offset(header.bitmap_offset as isize)
+    if result.content_size > 0 {
+        let base = result.contents as *mut u8;
+        let header = &*(base as *mut BitmapHeader);
+        let mut bitmap = LoadedBitmap {
+            pixels: base.offset(header.bitmap_offset as isize) as *mut u32,
+            width: header.width as usize,
+            height: header.height as usize,
+        };
+
+        let width = bitmap.width;
+        for row in bitmap.pixels_mut().chunks_exact_mut(width as usize) {
+            for pixel in row {
+                *pixel = ((*pixel) >> 8) | ((*pixel) << 24);
+            }
+        }
+
+        return Some(bitmap);
+    }
+
+    None
+}
+
+pub fn draw_bitmap(buffer: &mut RenderBuffer, bitmap: &LoadedBitmap, x: f32, y: f32) {
+    assert_eq!(buffer.bytes_per_pixel, 4);
+
+    let mut width = bitmap.width as isize;
+    let mut height = bitmap.height as isize;
+    let mut src_min_x = 0;
+    let mut src_min_y = 0;
+    let mut dst_min_x = x.round() as isize;
+    let mut dst_min_y = y.round() as isize;
+    if dst_min_x < 0 {
+        width += dst_min_x;
+        src_min_x -= dst_min_x;
+        dst_min_x = 0;
+    }
+    if dst_min_y < 0 {
+        height += dst_min_y;
+        src_min_y -= dst_min_y;
+        dst_min_y = 0;
+    }
+
+    let mut dst_max_x = dst_min_x + width;
+    let mut dst_max_y = dst_min_y + height;
+    if dst_max_x > buffer.width as isize {
+        width -= dst_max_x - buffer.width as isize;
+        dst_max_x = dst_min_x + width;
+    }
+    if dst_max_y > buffer.height as isize {
+        height -= dst_max_y - buffer.height as isize;
+        dst_max_y = dst_min_y + height;
+    }
+
+    if dst_min_x >= dst_max_x || dst_min_y >= dst_max_y {
+        return;
+    }
+
+    for (dst_row, src_row) in buffer
+        .bytes
+        .chunks_exact_mut(buffer.pitch)
+        .skip(dst_min_y as usize)
+        .take(height as usize)
+        .zip(bitmap.rows().skip(src_min_y as usize).take(height as usize))
+    {
+        for (dst, src) in dst_row
+            .chunks_exact_mut(buffer.bytes_per_pixel)
+            .skip(dst_min_x as usize)
+            .take(width as usize)
+            .zip(src_row.iter().skip(src_min_x as usize).take(width as usize))
+        {
+            unsafe {
+                *(dst.as_mut_ptr() as *mut u32) = *src;
+            }
+        }
+    }
 }

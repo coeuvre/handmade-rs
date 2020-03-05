@@ -46,23 +46,31 @@ pub fn draw_rectangle(
     }
 
     let bytes_per_pixel = buffer.bytes_per_pixel;
-    let min_row = min_y as usize * buffer.pitch;
-    let max_row = max_y as usize * buffer.pitch;
-    let min_col = min_x as usize * bytes_per_pixel;
-    let max_col = max_x as usize * bytes_per_pixel;
+    let width = (max_x - min_x) as usize;
+    let height = (max_y - min_y) as usize;
+    let min_x = min_x as usize;
+    let min_y = min_y as usize;
 
-    let r = (r * 255.0).round() as u8;
-    let g = (g * 255.0).round() as u8;
-    let b = (b * 255.0).round() as u8;
+    let r = (r * 255.0).round() as u32;
+    let g = (g * 255.0).round() as u32;
+    let b = (b * 255.0).round() as u32;
+    // PATTERN: BB GG RR AA
+    //          0xAARRGGBB
+    let color = (r << 16) | (g << 8) | (b << 0);
 
-    for row in buffer.bytes[min_row..max_row].chunks_exact_mut(buffer.pitch) {
-        let row = unsafe { row.get_unchecked_mut(min_col..max_col) };
-        for pixel in row.chunks_exact_mut(bytes_per_pixel) {
-            // PATTERN: BB GG RR AA
+    for row in buffer
+        .bytes
+        .chunks_exact_mut(buffer.pitch)
+        .skip(min_y)
+        .take(height)
+    {
+        for pixel in row
+            .chunks_exact_mut(bytes_per_pixel)
+            .skip(min_x)
+            .take(width)
+        {
             unsafe {
-                *pixel.get_unchecked_mut(0) = b;
-                *pixel.get_unchecked_mut(1) = g;
-                *pixel.get_unchecked_mut(2) = r;
+                *(pixel.as_mut_ptr() as *mut u32) = color;
             }
         }
     }
