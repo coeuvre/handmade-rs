@@ -153,6 +153,17 @@ impl TileMap {
             tile_value,
         );
     }
+
+    pub fn subtract(&self, a: TileMapPosition, b: TileMapPosition) -> TileMapDifference {
+        let d_tile_x = a.abs_tile_x as f32 - b.abs_tile_x as f32;
+        let d_tile_y = a.abs_tile_y as f32 - b.abs_tile_y as f32;
+        let d_tile_z = a.abs_tile_z as f32 - b.abs_tile_z as f32;
+        TileMapDifference {
+            dx: self.tile_side_in_meters * d_tile_x + (a.offset_x - b.offset_x),
+            dy: self.tile_side_in_meters * d_tile_y + (a.offset_y - b.offset_y),
+            dz: self.tile_side_in_meters * d_tile_z,
+        }
+    }
 }
 
 pub struct TileChunk {
@@ -191,4 +202,10 @@ struct TileChunkPosition {
     tile_chunk_z: u32,
     rel_tile_x: u32,
     rel_tile_y: u32,
+}
+
+pub struct TileMapDifference {
+    pub dx: f32,
+    pub dy: f32,
+    pub dz: f32,
 }

@@ -212,22 +212,58 @@ impl MemoryArena {
 pub struct GameState {
     world_arena: MemoryArena,
     world: ArenaObject<World>,
+    camera_p: TileMapPosition,
     player_p: TileMapPosition,
     backdrop: LoadedBitmap,
-    hero_head: LoadedBitmap,
-    hero_cape: LoadedBitmap,
-    hero_torso: LoadedBitmap,
+    hero_bitmaps: [HeroBitmaps; 4],
+    hero_facing_direction: usize,
 }
 
 impl GameState {
     pub unsafe fn new(permanent_storage: &mut MemoryArena) -> GameState {
         let backdrop = debug_load_bmp("test/test_background.bmp\0".as_ptr() as *const i8).unwrap();
-        let hero_head =
-            debug_load_bmp("test/test_hero_front_head.bmp\0".as_ptr() as *const i8).unwrap();
-        let hero_cape =
-            debug_load_bmp("test/test_hero_front_cape.bmp\0".as_ptr() as *const i8).unwrap();
-        let hero_torso =
-            debug_load_bmp("test/test_hero_front_torso.bmp\0".as_ptr() as *const i8).unwrap();
+        let hero_bitmaps = [
+            HeroBitmaps {
+                align_x: 72,
+                align_y: 183,
+                head: debug_load_bmp("test/test_hero_right_head.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                torso: debug_load_bmp("test/test_hero_right_torso.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                cape: debug_load_bmp("test/test_hero_right_cape.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+            },
+            HeroBitmaps {
+                align_x: 72,
+                align_y: 183,
+                head: debug_load_bmp("test/test_hero_back_head.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                torso: debug_load_bmp("test/test_hero_back_torso.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                cape: debug_load_bmp("test/test_hero_back_cape.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+            },
+            HeroBitmaps {
+                align_x: 72,
+                align_y: 183,
+                head: debug_load_bmp("test/test_hero_left_head.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                torso: debug_load_bmp("test/test_hero_left_torso.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                cape: debug_load_bmp("test/test_hero_left_cape.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+            },
+            HeroBitmaps {
+                align_x: 72,
+                align_y: 183,
+                head: debug_load_bmp("test/test_hero_front_head.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                torso: debug_load_bmp("test/test_hero_front_torso.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+                cape: debug_load_bmp("test/test_hero_front_cape.bmp\0".as_ptr() as *const i8)
+                    .unwrap(),
+            },
+        ];
 
         let mut world_arena = permanent_storage.reserve(permanent_storage.remaining());
         let mut tile_map = world_arena.alloc_uninit::<TileMap>();
@@ -378,20 +414,26 @@ impl GameState {
         }
 
         let world = world_arena.alloc(World { tile_map });
-        let mut player_p = TileMapPosition::default();
-        player_p.abs_tile_x = 1;
-        player_p.abs_tile_y = 3;
-        player_p.abs_tile_z = 0;
-        player_p.offset_x = 5.0;
-        player_p.offset_y = 5.0;
         GameState {
             world_arena,
             world,
-            player_p,
+            camera_p: TileMapPosition {
+                abs_tile_x: 17 / 2,
+                abs_tile_y: 9 / 2,
+                abs_tile_z: 0,
+                offset_x: 0.0,
+                offset_y: 0.0,
+            },
+            player_p: TileMapPosition {
+                abs_tile_x: 1,
+                abs_tile_y: 3,
+                abs_tile_z: 0,
+                offset_x: 5.0,
+                offset_y: 5.0,
+            },
             backdrop,
-            hero_head,
-            hero_cape,
-            hero_torso,
+            hero_bitmaps,
+            hero_facing_direction: 0,
         }
     }
 
@@ -416,15 +458,19 @@ impl GameState {
                 let mut d_player_x = 0.0;
                 let mut d_player_y = 0.0;
                 if controller.move_up.ended_down != 0 {
+                    self.hero_facing_direction = 1;
                     d_player_y = 1.0;
                 }
                 if controller.move_down.ended_down != 0 {
+                    self.hero_facing_direction = 3;
                     d_player_y = -1.0;
                 }
                 if controller.move_left.ended_down != 0 {
+                    self.hero_facing_direction = 2;
                     d_player_x = -1.0;
                 }
                 if controller.move_right.ended_down != 0 {
+                    self.hero_facing_direction = 0;
                     d_player_x = 1.0;
                 }
                 let mut player_speed = 2.0;
@@ -468,6 +514,19 @@ impl GameState {
 
                     self.player_p = new_player_p;
                 }
+
+                self.camera_p.abs_tile_z = self.player_p.abs_tile_z;
+                let diff = tile_map.subtract(self.player_p, self.camera_p);
+                if diff.dx > 9.0 * tile_map.tile_side_in_meters {
+                    self.camera_p.abs_tile_x += 17;
+                } else if diff.dx < -9.0 * tile_map.tile_side_in_meters {
+                    self.camera_p.abs_tile_x -= 17;
+                }
+                if diff.dy > 5.0 * tile_map.tile_side_in_meters {
+                    self.camera_p.abs_tile_y += 9;
+                } else if diff.dy < -5.0 * tile_map.tile_side_in_meters {
+                    self.camera_p.abs_tile_y -= 9;
+                }
             }
         }
 
@@ -489,10 +548,10 @@ impl GameState {
 
         for rel_y in -10..=10 {
             for rel_x in -20..=20 {
-                let x = (self.player_p.abs_tile_x as i32 + rel_x) as u32;
-                let y = (self.player_p.abs_tile_y as i32 + rel_y) as u32;
+                let x = (self.camera_p.abs_tile_x as i32 + rel_x) as u32;
+                let y = (self.camera_p.abs_tile_y as i32 + rel_y) as u32;
 
-                if let Some(tile_value) = tile_map.get_tile_value(x, y, self.player_p.abs_tile_z) {
+                if let Some(tile_value) = tile_map.get_tile_value(x, y, self.camera_p.abs_tile_z) {
                     if tile_value < 2 {
                         continue;
                     }
@@ -503,14 +562,14 @@ impl GameState {
                         _ => 0.5,
                     };
 
-                    if x == self.player_p.abs_tile_x && y == self.player_p.abs_tile_y {
+                    if x == self.camera_p.abs_tile_x && y == self.camera_p.abs_tile_y {
                         gray = 0.0;
                     }
 
                     let cen_x = screen_center_x + rel_x as f32 * tile_side_in_pixels as f32
-                        - meters_to_pixels * self.player_p.offset_x;
+                        - meters_to_pixels * self.camera_p.offset_x;
                     let cen_y = screen_center_y - rel_y as f32 * tile_side_in_pixels as f32
-                        + meters_to_pixels * self.player_p.offset_y;
+                        + meters_to_pixels * self.camera_p.offset_y;
                     let min_x = cen_x - 0.5 * tile_side_in_pixels as f32;
                     let min_y = cen_y - 0.5 * tile_side_in_pixels as f32;
                     let max_x = min_x + tile_side_in_pixels as f32;
@@ -529,11 +588,15 @@ impl GameState {
             }
         }
 
+        let diff = tile_map.subtract(self.player_p, self.camera_p);
+
         let player_r = 1.0;
         let player_g = 1.0;
         let player_b = 0.0;
-        let player_left = screen_center_x - 0.5 * meters_to_pixels * player_width;
-        let player_top = screen_center_y - meters_to_pixels * player_height;
+        let player_ground_point_x = screen_center_x + meters_to_pixels * diff.dx;
+        let player_ground_point_y = screen_center_y - meters_to_pixels * diff.dy;
+        let player_left = player_ground_point_x - 0.5 * meters_to_pixels * player_width;
+        let player_top = player_ground_point_y - meters_to_pixels * player_height;
         let player_right = player_left + meters_to_pixels * player_width;
         let player_bottom = player_top + meters_to_pixels * player_height;
         draw_rectangle(
@@ -546,7 +609,25 @@ impl GameState {
             player_g,
             player_b,
         );
-        draw_bitmap(&mut render_buffer, &self.hero_head, player_left, player_top);
+        let hero_bitmaps = &self.hero_bitmaps[self.hero_facing_direction];
+        draw_bitmap(
+            &mut render_buffer,
+            &hero_bitmaps.torso,
+            player_ground_point_x - hero_bitmaps.align_x as f32,
+            player_ground_point_y - hero_bitmaps.align_y as f32,
+        );
+        draw_bitmap(
+            &mut render_buffer,
+            &hero_bitmaps.cape,
+            player_ground_point_x - hero_bitmaps.align_x as f32,
+            player_ground_point_y - hero_bitmaps.align_y as f32,
+        );
+        draw_bitmap(
+            &mut render_buffer,
+            &hero_bitmaps.head,
+            player_ground_point_x - hero_bitmaps.align_x as f32,
+            player_ground_point_y - hero_bitmaps.align_y as f32,
+        );
     }
 
     pub fn get_sound_samples(&mut self, sound_buffer: &mut GameSoundBuffer) {
@@ -666,4 +747,12 @@ unsafe fn debug_load_bmp(file_name: *const i8) -> Option<LoadedBitmap> {
     }
 
     None
+}
+
+struct HeroBitmaps {
+    pub align_x: u32,
+    pub align_y: u32,
+    pub head: LoadedBitmap,
+    pub cape: LoadedBitmap,
+    pub torso: LoadedBitmap,
 }

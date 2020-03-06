@@ -145,19 +145,21 @@ pub fn draw_bitmap(buffer: &mut RenderBuffer, bitmap: &LoadedBitmap, x: f32, y: 
             .zip(src_row.iter().skip(src_min_x as usize).take(width as usize))
         {
             unsafe {
-                let a = ((*src >> 24) & 0xFF) as f32 / 255.0;
-                let sr = ((*src >> 16) & 0xFF) as f32 / 255.0;
-                let sg = ((*src >> 8) & 0xFF) as f32 / 255.0;
-                let sb = ((*src >> 0) & 0xFF) as f32 / 255.0;
-                let db = *dst.get_unchecked(0) as f32 / 255.0;
-                let dg = *dst.get_unchecked(1) as f32 / 255.0;
-                let dr = *dst.get_unchecked(2) as f32 / 255.0;
+                let src_val = *src;
+                let dst_val = *(dst.as_ptr() as *const u32);
+                let a = ((src_val >> 24) & 0xFF) as f32 / 255.0;
+                let sr = ((src_val >> 16) & 0xFF) as f32;
+                let sg = ((src_val >> 8) & 0xFF) as f32;
+                let sb = ((src_val >> 0) & 0xFF) as f32;
+                let dr = ((dst_val >> 16) & 0xFF) as f32;
+                let dg = ((dst_val >> 8) & 0xFF) as f32;
+                let db = ((dst_val >> 0) & 0xFF) as f32;
                 let r = (1.0 - a) * dr + a * sr;
                 let g = (1.0 - a) * dg + a * sg;
                 let b = (1.0 - a) * db + a * sb;
-                *dst.get_unchecked_mut(0) = (b * 255.0).round() as u8;
-                *dst.get_unchecked_mut(1) = (g * 255.0).round() as u8;
-                *dst.get_unchecked_mut(2) = (r * 255.0).round() as u8;
+                *(dst.as_mut_ptr() as *mut u32) = (((r + 0.5) as u32) << 16)
+                    | (((g + 0.5) as u32) << 8)
+                    | (((b + 0.5) as u32) << 0);
             }
         }
     }
