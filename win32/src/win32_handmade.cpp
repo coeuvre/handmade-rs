@@ -2,6 +2,26 @@
 #include "win32_handmade.h"
 #include <stdio.h>
 
+static void toggle_fullscreen(HWND window) {
+    DWORD style = GetWindowLong(window, GWL_STYLE);
+    if (style & WS_OVERLAPPEDWINDOW) {
+        MONITORINFO monitor_info = {sizeof(monitor_info)};
+        if (GetWindowPlacement(window, &WINDOW_POSITION) &&
+            GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY), &monitor_info)) {
+            SetWindowLong(window, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(window, HWND_TOP, monitor_info.rcMonitor.left, monitor_info.rcMonitor.top,
+                         monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
+                         monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    } else {
+        SetWindowLong(window, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(window, &WINDOW_POSITION);
+        SetWindowPos(window, 0, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+}
+
 static void cat_strings(size_t source_a_count, char *source_a,
                         size_t source_b_count, char *source_b,
                         size_t dest_count, char *dest) {
@@ -318,29 +338,49 @@ static void win32_resize_dib_section(Win32OffscreenBuffer *buffer, int width, in
 
 static void
 win32_display_buffer_in_window(HDC device_context, int window_width, int window_height, Win32OffscreenBuffer *buffer) {
-    int offset_x = 10;
-    int offset_y = 10;
+    if (window_width >= buffer->width * 2 && window_height >= buffer->height * 2) {
+        StretchDIBits(
+                device_context,
+                0,
+                0,
+                buffer->width * 2,
+                buffer->height * 2,
+                0,
+                0,
+                buffer->width,
+                buffer->height,
+                buffer->memory,
+                &buffer->info,
+                DIB_RGB_COLORS,
+                SRCCOPY
+        );
+    } else {
+        int offset_x = 10;
+        int offset_y = 10;
 
-    PatBlt(device_context, 0, 0, window_width, offset_y, BLACKNESS);
-    PatBlt(device_context, 0, offset_y, offset_x, window_height - offset_y, BLACKNESS);
-    PatBlt(device_context, offset_x + buffer->width, offset_y, window_width - offset_x - buffer->width, window_height - offset_y, BLACKNESS);
-    PatBlt(device_context, offset_x, offset_y + buffer->height, window_width - offset_x, window_height - offset_y - buffer->height, BLACKNESS);
+        PatBlt(device_context, 0, 0, window_width, offset_y, BLACKNESS);
+        PatBlt(device_context, 0, offset_y, offset_x, window_height - offset_y, BLACKNESS);
+        PatBlt(device_context, offset_x + buffer->width, offset_y, window_width - offset_x - buffer->width,
+               window_height - offset_y, BLACKNESS);
+        PatBlt(device_context, offset_x, offset_y + buffer->height, window_width - offset_x,
+               window_height - offset_y - buffer->height, BLACKNESS);
 
-    StretchDIBits(
-            device_context,
-            offset_x,
-            offset_y,
-            buffer->width,
-            buffer->height,
-            0,
-            0,
-            buffer->width,
-            buffer->height,
-            buffer->memory,
-            &buffer->info,
-            DIB_RGB_COLORS,
-            SRCCOPY
-    );
+        StretchDIBits(
+                device_context,
+                offset_x,
+                offset_y,
+                buffer->width,
+                buffer->height,
+                0,
+                0,
+                buffer->width,
+                buffer->height,
+                buffer->memory,
+                &buffer->info,
+                DIB_RGB_COLORS,
+                SRCCOPY
+        );
+    }
 }
 
 LRESULT CALLBACK win32_main_window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -358,6 +398,14 @@ LRESULT CALLBACK win32_main_window_proc(HWND window, UINT message, WPARAM wparam
         case WM_DESTROY:
         case WM_CLOSE: {
             RUNNING = false;
+            break;
+        }
+        case WM_SETCURSOR: {
+            if (DEBUG_SHOW_CURSOR) {
+                return DefWindowProc(window, message, wparam, lparam);
+            } else {
+                SetCursor(0);
+            }
             break;
         }
         case WM_SYSKEYDOWN:
@@ -574,9 +622,16 @@ static void win32_process_pending_messages(GameControllerInput *keyboard_control
 #endif
                 }
 
-                int alt_key_was_down = (int)(message.lParam & (1 << 29));
-                if (is_down && (vk_code == VK_ESCAPE || (alt_key_was_down != 0 && vk_code == VK_F4))) {
-                    RUNNING = false;
+                if (is_down) {
+                    int alt_key_was_down = (int)(message.lParam & (1 << 29));
+                    if (vk_code == VK_ESCAPE || (alt_key_was_down && vk_code == VK_F4)) {
+                        RUNNING = false;
+                    }
+                    if (vk_code == VK_RETURN && alt_key_was_down) {
+                        if (message.hwnd) {
+                            toggle_fullscreen(message.hwnd);
+                        }
+                    }
                 }
                 break;
             }
@@ -716,11 +771,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CmdLine, 
 
     HINSTANCE instance = GetModuleHandle(0);
 
+#ifdef HANDMADE_INTERNAL
+    DEBUG_SHOW_CURSOR = true;
+#endif
     LPCSTR class_name = "HandmadeHero";
     WNDCLASS window_class = {};
     window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.lpfnWndProc = win32_main_window_proc;
     window_class.hInstance = instance;
+    window_class.hCursor = LoadCursor(0, IDC_ARROW);
     window_class.lpszClassName = class_name;
 
     if (!RegisterClass(&window_class)) {
