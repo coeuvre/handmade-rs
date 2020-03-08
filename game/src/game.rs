@@ -215,6 +215,7 @@ pub struct GameState {
     world: ArenaObject<World>,
     camera_p: TileMapPosition,
     player_p: TileMapPosition,
+    d_player_p: V2,
     backdrop: LoadedBitmap,
     hero_bitmaps: [HeroBitmaps; 4],
     hero_facing_direction: usize,
@@ -430,6 +431,7 @@ impl GameState {
                 abs_tile_z: 0,
                 offset: V2::new(5.0, 5.0),
             },
+            d_player_p: V2::zero(),
             backdrop,
             hero_bitmaps,
             hero_facing_direction: 0,
@@ -454,30 +456,41 @@ impl GameState {
 
         for controller in input.controllers.iter() {
             if controller.is_analog == 0 {
-                let mut d_player = V2::zero();
+                let mut dd_player_p = V2::zero();
                 if controller.move_up.ended_down != 0 {
                     self.hero_facing_direction = 1;
-                    d_player.y = 1.0;
+                    dd_player_p.y = 1.0;
                 }
                 if controller.move_down.ended_down != 0 {
                     self.hero_facing_direction = 3;
-                    d_player.y = -1.0;
+                    dd_player_p.y = -1.0;
                 }
                 if controller.move_left.ended_down != 0 {
                     self.hero_facing_direction = 2;
-                    d_player.x = -1.0;
+                    dd_player_p.x = -1.0;
                 }
                 if controller.move_right.ended_down != 0 {
                     self.hero_facing_direction = 0;
-                    d_player.x = 1.0;
+                    dd_player_p.x = 1.0;
                 }
-                let mut player_speed = 2.0;
+                if dd_player_p.x != 0.0 && dd_player_p.y != 0.0 {
+                    dd_player_p *= core::f32::consts::FRAC_1_SQRT_2;
+                }
+
+                let mut player_speed = 10.0;
                 if controller.action_up.ended_down != 0 {
-                    player_speed = 10.0;
+                    player_speed = 50.0;
                 }
-                d_player *= player_speed;
+                dd_player_p *= player_speed;
+
+                // TODO: ODE
+                dd_player_p += -1.5 * self.d_player_p;
+
                 let mut new_player_p = self.player_p;
-                new_player_p.offset += d_player * input.dt;
+                new_player_p.offset +=
+                    0.5 * dd_player_p * input.dt.powi(2) + self.d_player_p * input.dt;
+                self.d_player_p += dd_player_p * input.dt;
+
                 new_player_p = tile_map.recanonicalize_position(new_player_p);
 
                 let mut player_left = new_player_p;
