@@ -9,5 +9,8 @@ crate-type = ["cdylib"]
 [dependencies]
 libc = "0.2"
 
+[dependencies.base]
+path = "../base"
+
 [dependencies.software_renderer]
 path = "../software_renderer"

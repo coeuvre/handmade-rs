@@ -1,13 +1,15 @@
 use core::num::Wrapping;
+
+use base::math::V2;
+
 use game::{ArenaArray, MemoryArena};
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
 pub struct TileMapPosition {
     pub abs_tile_x: u32,
     pub abs_tile_y: u32,
     pub abs_tile_z: u32,
-    pub offset_x: f32,
-    pub offset_y: f32,
+    pub offset: V2,
 }
 
 impl TileMapPosition {
@@ -80,8 +82,8 @@ impl TileMap {
     pub fn recanonicalize_position(&self, pos: TileMapPosition) -> TileMapPosition {
         let mut result = pos;
 
-        self.recanonicalize_coord(&mut result.abs_tile_x, &mut result.offset_x);
-        self.recanonicalize_coord(&mut result.abs_tile_y, &mut result.offset_y);
+        self.recanonicalize_coord(&mut result.abs_tile_x, &mut result.offset.x);
+        self.recanonicalize_coord(&mut result.abs_tile_y, &mut result.offset.y);
 
         result
     }
@@ -155,12 +157,13 @@ impl TileMap {
     }
 
     pub fn subtract(&self, a: TileMapPosition, b: TileMapPosition) -> TileMapDifference {
-        let d_tile_x = a.abs_tile_x as f32 - b.abs_tile_x as f32;
-        let d_tile_y = a.abs_tile_y as f32 - b.abs_tile_y as f32;
+        let d_tile_xy = V2::new(
+            a.abs_tile_x as f32 - b.abs_tile_x as f32,
+            a.abs_tile_y as f32 - b.abs_tile_y as f32,
+        );
         let d_tile_z = a.abs_tile_z as f32 - b.abs_tile_z as f32;
         TileMapDifference {
-            dx: self.tile_side_in_meters * d_tile_x + (a.offset_x - b.offset_x),
-            dy: self.tile_side_in_meters * d_tile_y + (a.offset_y - b.offset_y),
+            dxy: self.tile_side_in_meters * d_tile_xy + (a.offset - b.offset),
             dz: self.tile_side_in_meters * d_tile_z,
         }
     }
@@ -205,7 +208,6 @@ struct TileChunkPosition {
 }
 
 pub struct TileMapDifference {
-    pub dx: f32,
-    pub dy: f32,
+    pub dxy: V2,
     pub dz: f32,
 }

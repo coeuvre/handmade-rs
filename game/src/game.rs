@@ -1,15 +1,16 @@
 use core::ops::{Deref, DerefMut};
+use core::ptr::null_mut;
+
+use base::math::V2;
 
 use software_renderer::*;
 
-use crate::random::RANDOM_NUMBER_TABLE;
-use crate::GameInput;
-use crate::GameOffscreenBuffer;
-use crate::GameSoundBuffer;
-
-use crate::tile_map::*;
-use core::ptr::null_mut;
 use debug_platform_read_entire_file;
+use random::RANDOM_NUMBER_TABLE;
+use tile_map::*;
+use GameInput;
+use GameOffscreenBuffer;
+use GameSoundBuffer;
 
 struct World {
     tile_map: ArenaObject<TileMap>,
@@ -421,15 +422,13 @@ impl GameState {
                 abs_tile_x: 17 / 2,
                 abs_tile_y: 9 / 2,
                 abs_tile_z: 0,
-                offset_x: 0.0,
-                offset_y: 0.0,
+                offset: V2::zero(),
             },
             player_p: TileMapPosition {
                 abs_tile_x: 1,
                 abs_tile_y: 3,
                 abs_tile_z: 0,
-                offset_x: 5.0,
-                offset_y: 5.0,
+                offset: V2::new(5.0, 5.0),
             },
             backdrop,
             hero_bitmaps,
@@ -455,41 +454,38 @@ impl GameState {
 
         for controller in input.controllers.iter() {
             if controller.is_analog == 0 {
-                let mut d_player_x = 0.0;
-                let mut d_player_y = 0.0;
+                let mut d_player = V2::zero();
                 if controller.move_up.ended_down != 0 {
                     self.hero_facing_direction = 1;
-                    d_player_y = 1.0;
+                    d_player.y = 1.0;
                 }
                 if controller.move_down.ended_down != 0 {
                     self.hero_facing_direction = 3;
-                    d_player_y = -1.0;
+                    d_player.y = -1.0;
                 }
                 if controller.move_left.ended_down != 0 {
                     self.hero_facing_direction = 2;
-                    d_player_x = -1.0;
+                    d_player.x = -1.0;
                 }
                 if controller.move_right.ended_down != 0 {
                     self.hero_facing_direction = 0;
-                    d_player_x = 1.0;
+                    d_player.x = 1.0;
                 }
                 let mut player_speed = 2.0;
                 if controller.action_up.ended_down != 0 {
                     player_speed = 10.0;
                 }
-                d_player_x *= player_speed;
-                d_player_y *= player_speed;
+                d_player *= player_speed;
                 let mut new_player_p = self.player_p;
-                new_player_p.offset_x += d_player_x * input.dt;
-                new_player_p.offset_y += d_player_y * input.dt;
+                new_player_p.offset += d_player * input.dt;
                 new_player_p = tile_map.recanonicalize_position(new_player_p);
 
                 let mut player_left = new_player_p;
-                player_left.offset_x -= 0.5 * player_width;
+                player_left.offset.x -= 0.5 * player_width;
                 player_left = tile_map.recanonicalize_position(player_left);
 
                 let mut player_right = new_player_p;
-                player_right.offset_x += 0.5 * player_width;
+                player_right.offset.x += 0.5 * player_width;
                 player_right = tile_map.recanonicalize_position(player_right);
 
                 if tile_map.is_point_empty(player_left)
@@ -517,14 +513,14 @@ impl GameState {
 
                 self.camera_p.abs_tile_z = self.player_p.abs_tile_z;
                 let diff = tile_map.subtract(self.player_p, self.camera_p);
-                if diff.dx > 9.0 * tile_map.tile_side_in_meters {
+                if diff.dxy.x > 9.0 * tile_map.tile_side_in_meters {
                     self.camera_p.abs_tile_x += 17;
-                } else if diff.dx < -9.0 * tile_map.tile_side_in_meters {
+                } else if diff.dxy.x < -9.0 * tile_map.tile_side_in_meters {
                     self.camera_p.abs_tile_x -= 17;
                 }
-                if diff.dy > 5.0 * tile_map.tile_side_in_meters {
+                if diff.dxy.y > 5.0 * tile_map.tile_side_in_meters {
                     self.camera_p.abs_tile_y += 9;
-                } else if diff.dy < -5.0 * tile_map.tile_side_in_meters {
+                } else if diff.dxy.y < -5.0 * tile_map.tile_side_in_meters {
                     self.camera_p.abs_tile_y -= 9;
                 }
             }
@@ -566,24 +562,16 @@ impl GameState {
                         gray = 0.0;
                     }
 
-                    let cen_x = screen_center_x + rel_x as f32 * tile_side_in_pixels as f32
-                        - meters_to_pixels * self.camera_p.offset_x;
-                    let cen_y = screen_center_y - rel_y as f32 * tile_side_in_pixels as f32
-                        + meters_to_pixels * self.camera_p.offset_y;
-                    let min_x = cen_x - 0.5 * tile_side_in_pixels as f32;
-                    let min_y = cen_y - 0.5 * tile_side_in_pixels as f32;
-                    let max_x = min_x + tile_side_in_pixels as f32;
-                    let max_y = min_y + tile_side_in_pixels as f32;
-                    draw_rectangle(
-                        &mut render_buffer,
-                        min_x,
-                        min_y,
-                        max_x,
-                        max_y,
-                        gray,
-                        gray,
-                        gray,
+                    let tile_side = V2::new(tile_side_in_pixels, tile_side_in_pixels);
+                    let cen = V2::new(
+                        screen_center_x + rel_x as f32 * tile_side_in_pixels as f32
+                            - meters_to_pixels * self.camera_p.offset.x,
+                        screen_center_y - rel_y as f32 * tile_side_in_pixels as f32
+                            + meters_to_pixels * self.camera_p.offset.y,
                     );
+                    let min = cen - 0.5 * tile_side;
+                    let max = min + tile_side;
+                    draw_rectangle(&mut render_buffer, min, max, gray, gray, gray);
                 }
             }
         }
@@ -593,18 +581,17 @@ impl GameState {
         let player_r = 1.0;
         let player_g = 1.0;
         let player_b = 0.0;
-        let player_ground_point_x = screen_center_x + meters_to_pixels * diff.dx;
-        let player_ground_point_y = screen_center_y - meters_to_pixels * diff.dy;
-        let player_left = player_ground_point_x - 0.5 * meters_to_pixels * player_width;
-        let player_top = player_ground_point_y - meters_to_pixels * player_height;
-        let player_right = player_left + meters_to_pixels * player_width;
-        let player_bottom = player_top + meters_to_pixels * player_height;
+        let player_ground_point_x = screen_center_x + meters_to_pixels * diff.dxy.x;
+        let player_ground_point_y = screen_center_y - meters_to_pixels * diff.dxy.y;
+        let player_width_height = V2::new(player_width, player_height);
+        let player_left_top = V2::new(
+            player_ground_point_x - 0.5 * meters_to_pixels * player_width,
+            player_ground_point_y - meters_to_pixels * player_height,
+        );
         draw_rectangle(
             &mut render_buffer,
-            player_left,
-            player_top,
-            player_right,
-            player_bottom,
+            player_left_top,
+            player_left_top + meters_to_pixels * player_width_height,
             player_r,
             player_g,
             player_b,

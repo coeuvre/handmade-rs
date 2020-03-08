@@ -1,9 +1,6 @@
 [package]
-name = "software_renderer"
+name = "base"
 version = "0.1.0"
 authors = ["coeuvre"]
 
 [dependencies]
-
-[dependencies.base]
-path = "../base"

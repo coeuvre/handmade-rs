@@ -1,3 +1,7 @@
+extern crate base;
+
+use base::math::V2;
+
 // pub fn render_weird_gradient(memory: *mut u8, width: i32, height: i32, pitch: i32, x_offset: i32, y_offset: i32) {
 //     let mut row = memory;
 //     for y in 0..height {
@@ -24,22 +28,13 @@ pub struct RenderBuffer<'a> {
     pub bytes_per_pixel: usize,
 }
 
-pub fn draw_rectangle(
-    buffer: &mut RenderBuffer,
-    min_x: f32,
-    min_y: f32,
-    max_x: f32,
-    max_y: f32,
-    r: f32,
-    g: f32,
-    b: f32,
-) {
+pub fn draw_rectangle(buffer: &mut RenderBuffer, min: V2, max: V2, r: f32, g: f32, b: f32) {
     assert_eq!(buffer.bytes_per_pixel, 4);
 
-    let min_x = min_x.round().max(0.0) as isize;
-    let min_y = min_y.round().max(0.0) as isize;
-    let max_x = (max_x.round() as isize).min(buffer.width as isize);
-    let max_y = (max_y.round() as isize).min(buffer.height as isize);
+    let min_x = min.x.round().max(0.0) as isize;
+    let min_y = min.y.round().max(0.0) as isize;
+    let max_x = (max.x.round() as isize).min(buffer.width as isize);
+    let max_y = (max.y.round() as isize).min(buffer.height as isize);
 
     if min_x >= max_x || min_y >= max_y {
         return;

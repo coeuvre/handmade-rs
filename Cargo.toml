@@ -1,5 +1,5 @@
 [workspace]
-members = ["game", "software_renderer"]
+members = ["base", "game", "software_renderer"]
 
 [profile.dev.package.software_renderer]
 opt-level=3

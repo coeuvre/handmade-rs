@@ -1,6 +1,8 @@
 #![no_std]
 
 extern crate libc;
+
+extern crate base;
 extern crate software_renderer;
 
 use core::ffi::c_void;
