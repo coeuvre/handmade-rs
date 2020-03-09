@@ -75,3 +75,11 @@ impl MulAssign<f32> for V2 {
         self.y *= rhs;
     }
 }
+
+impl Mul<V2> for V2 {
+    type Output = f32;
+
+    fn mul(self, rhs: V2) -> Self::Output {
+        self.x * rhs.x + self.y * rhs.y
+    }
+}

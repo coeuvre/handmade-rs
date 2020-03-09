@@ -501,10 +501,29 @@ impl GameState {
                 player_right.offset.x += 0.5 * player_width;
                 player_right = tile_map.recanonicalize_position(player_right);
 
-                if tile_map.is_point_empty(player_left)
-                    && tile_map.is_point_empty(player_right)
-                    && tile_map.is_point_empty(new_player_p)
-                {
+                let mut col_p = None;
+                if !tile_map.is_point_empty(player_left) {
+                    col_p = Some(player_left);
+                }
+                if !tile_map.is_point_empty(player_right) {
+                    col_p = Some(player_right);
+                }
+                if !tile_map.is_point_empty(new_player_p) {
+                    col_p = Some(new_player_p);
+                }
+
+                if let Some(col_p) = col_p {
+                    let r = if self.player_p.abs_tile_x > col_p.abs_tile_x {
+                        V2::new(1.0, 0.0)
+                    } else if self.player_p.abs_tile_x < col_p.abs_tile_x {
+                        V2::new(-1.0, 0.0)
+                    } else if self.player_p.abs_tile_y > col_p.abs_tile_y {
+                        V2::new(0.0, 1.0)
+                    } else {
+                        V2::new(0.0, -1.0)
+                    };
+                    self.d_player_p = self.d_player_p - 1.0 * self.d_player_p * r * r;
+                } else {
                     if !self.player_p.is_on_same_tile(&new_player_p) {
                         match tile_map.get_tile_value(
                             new_player_p.abs_tile_x,
