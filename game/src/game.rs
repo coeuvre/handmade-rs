@@ -454,6 +454,8 @@ impl GameState {
         let player_height = 1.4;
         let player_width = 0.75 * player_height;
 
+        let old_player_p = self.player_p;
+
         for controller in input.controllers.iter() {
             if controller.is_analog == 0 {
                 let mut dd_player_p = V2::zero();
@@ -490,7 +492,6 @@ impl GameState {
                 new_player_p.offset +=
                     0.5 * dd_player_p * input.dt.powi(2) + self.d_player_p * input.dt;
                 self.d_player_p += dd_player_p * input.dt;
-
                 new_player_p = tile_map.recanonicalize_position(new_player_p);
 
                 let mut player_left = new_player_p;
@@ -524,38 +525,39 @@ impl GameState {
                     };
                     self.d_player_p = self.d_player_p - 1.0 * self.d_player_p * r * r;
                 } else {
-                    if !self.player_p.is_on_same_tile(&new_player_p) {
-                        match tile_map.get_tile_value(
-                            new_player_p.abs_tile_x,
-                            new_player_p.abs_tile_y,
-                            new_player_p.abs_tile_z,
-                        ) {
-                            Some(3) => {
-                                new_player_p.abs_tile_z += 1;
-                            }
-                            Some(4) => {
-                                new_player_p.abs_tile_z -= 1;
-                            }
-                            _ => {}
-                        }
-                    }
-
                     self.player_p = new_player_p;
                 }
-
-                self.camera_p.abs_tile_z = self.player_p.abs_tile_z;
-                let diff = tile_map.subtract(self.player_p, self.camera_p);
-                if diff.dxy.x > 9.0 * tile_map.tile_side_in_meters {
-                    self.camera_p.abs_tile_x += 17;
-                } else if diff.dxy.x < -9.0 * tile_map.tile_side_in_meters {
-                    self.camera_p.abs_tile_x -= 17;
-                }
-                if diff.dxy.y > 5.0 * tile_map.tile_side_in_meters {
-                    self.camera_p.abs_tile_y += 9;
-                } else if diff.dxy.y < -5.0 * tile_map.tile_side_in_meters {
-                    self.camera_p.abs_tile_y -= 9;
-                }
             }
+        }
+
+        // Update Camera/Player Z based on last movement
+        if !self.player_p.is_on_same_tile(&old_player_p) {
+            match tile_map.get_tile_value(
+                self.player_p.abs_tile_x,
+                self.player_p.abs_tile_y,
+                self.player_p.abs_tile_z,
+            ) {
+                Some(3) => {
+                    self.player_p.abs_tile_z += 1;
+                }
+                Some(4) => {
+                    self.player_p.abs_tile_z -= 1;
+                }
+                _ => {}
+            }
+        }
+
+        self.camera_p.abs_tile_z = self.player_p.abs_tile_z;
+        let diff = tile_map.subtract(self.player_p, self.camera_p);
+        if diff.dxy.x > 9.0 * tile_map.tile_side_in_meters {
+            self.camera_p.abs_tile_x += 17;
+        } else if diff.dxy.x < -9.0 * tile_map.tile_side_in_meters {
+            self.camera_p.abs_tile_x -= 17;
+        }
+        if diff.dxy.y > 5.0 * tile_map.tile_side_in_meters {
+            self.camera_p.abs_tile_y += 9;
+        } else if diff.dxy.y < -5.0 * tile_map.tile_side_in_meters {
+            self.camera_p.abs_tile_y -= 9;
         }
 
         let mut render_buffer: RenderBuffer = offscreen_buffer.into();
