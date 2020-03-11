@@ -298,6 +298,11 @@ pub fn initialize_player(
 }
 
 pub fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
+    let ddp_len_sq = ddp.len_sq();
+    if ddp_len_sq > 1.0 {
+        ddp *= 1.0 / ddp_len_sq.sqrt();
+    }
+
     let speed = 50.0;
 
     ddp *= speed;
@@ -620,9 +625,6 @@ impl GameState {
                         }
                         if controller.move_right.ended_down != 0 {
                             dd_player_p.x = 1.0;
-                        }
-                        if dd_player_p.x != 0.0 && dd_player_p.y != 0.0 {
-                            dd_player_p *= core::f32::consts::FRAC_1_SQRT_2;
                         }
                     }
 

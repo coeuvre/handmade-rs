@@ -14,6 +14,10 @@ impl V2 {
     pub fn zero() -> V2 {
         V2 { x: 0.0, y: 0.0 }
     }
+
+    pub fn len_sq(&self) -> f32 {
+        self * self
+    }
 }
 
 impl Add<V2> for V2 {
