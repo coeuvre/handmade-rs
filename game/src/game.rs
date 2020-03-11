@@ -210,15 +210,170 @@ impl MemoryArena {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct Entity {
+    p: TileMapPosition,
+    dp: V2,
+    facing_direction: usize,
+    width: f32,
+    height: f32,
+}
+
+pub struct EntityCollection {
+    entity_count: usize,
+    entities: [Option<Entity>; 256],
+}
+
+impl EntityCollection {
+    pub fn new() -> EntityCollection {
+        EntityCollection {
+            entity_count: 0,
+            entities: unsafe {
+                let mut entities: [Option<Entity>; 256] =
+                    core::mem::MaybeUninit::uninit().assume_init();
+                for entity in entities.iter_mut() {
+                    *entity = None
+                }
+                entities
+            },
+        }
+    }
+
+    pub fn add_entity(&mut self) -> usize {
+        self.entities[self.entity_count] = Some(Entity::default());
+        self.entity_count += 1;
+        self.entity_count - 1
+    }
+
+    pub fn get_entity(&self, index: usize) -> Option<&Entity> {
+        self.entities.get(index).and_then(|entry| entry.into())
+    }
+
+    pub fn get_entity_mut(&mut self, index: usize) -> Option<&mut Entity> {
+        self.entities.get_mut(index).and_then(|entry| entry.into())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Entity> {
+        self.entities
+            .iter()
+            .take(self.entity_count)
+            .filter_map(|entry| entry.into())
+    }
+}
+
 pub struct GameState {
     world_arena: MemoryArena,
     world: ArenaObject<World>,
+
+    camera_following_entity_index: Option<usize>,
     camera_p: TileMapPosition,
-    player_p: TileMapPosition,
-    d_player_p: V2,
+
+    player_index_for_controller: [Option<usize>; 5],
+
+    entities: EntityCollection,
+
     backdrop: LoadedBitmap,
     hero_bitmaps: [HeroBitmaps; 4],
-    hero_facing_direction: usize,
+}
+
+pub fn initialize_player(
+    entity: &mut Entity,
+    entity_index: usize,
+    camera_following_entity_index: &mut Option<usize>,
+) {
+    *entity = Entity::default();
+    entity.p = TileMapPosition {
+        abs_tile_x: 1,
+        abs_tile_y: 3,
+        abs_tile_z: 0,
+        offset: V2::new(5.0, 5.0),
+    };
+    entity.dp = V2::zero();
+    entity.height = 1.4;
+    entity.width = 0.75 * entity.height;
+
+    if camera_following_entity_index.is_none() {
+        *camera_following_entity_index = Some(entity_index);
+    }
+}
+
+pub fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
+    let speed = 50.0;
+
+    ddp *= speed;
+
+    // TODO: ODE
+    ddp += -8.0 * entity.dp;
+
+    let old_player_p = entity.p;
+    let mut new_player_p = entity.p;
+    new_player_p.offset += 0.5 * ddp * dt.powi(2) + entity.dp * dt;
+    entity.dp += ddp * dt;
+    new_player_p = tile_map.recanonicalize_position(new_player_p);
+
+    let mut player_left = new_player_p;
+    player_left.offset.x -= 0.5 * entity.width;
+    player_left = tile_map.recanonicalize_position(player_left);
+
+    let mut player_right = new_player_p;
+    player_right.offset.x += 0.5 * entity.width;
+    player_right = tile_map.recanonicalize_position(player_right);
+
+    let mut col_p = None;
+    if !tile_map.is_point_empty(player_left) {
+        col_p = Some(player_left);
+    }
+    if !tile_map.is_point_empty(player_right) {
+        col_p = Some(player_right);
+    }
+    if !tile_map.is_point_empty(new_player_p) {
+        col_p = Some(new_player_p);
+    }
+
+    if let Some(col_p) = col_p {
+        let r = if entity.p.abs_tile_x > col_p.abs_tile_x {
+            V2::new(1.0, 0.0)
+        } else if entity.p.abs_tile_x < col_p.abs_tile_x {
+            V2::new(-1.0, 0.0)
+        } else if entity.p.abs_tile_y > col_p.abs_tile_y {
+            V2::new(0.0, 1.0)
+        } else {
+            V2::new(0.0, -1.0)
+        };
+        entity.dp = entity.dp - 1.0 * entity.dp * r * r;
+    } else {
+        entity.p = new_player_p;
+    }
+
+    if !entity.p.is_on_same_tile(&old_player_p) {
+        match tile_map.get_tile_value(
+            entity.p.abs_tile_x,
+            entity.p.abs_tile_y,
+            entity.p.abs_tile_z,
+        ) {
+            Some(3) => {
+                entity.p.abs_tile_z += 1;
+            }
+            Some(4) => {
+                entity.p.abs_tile_z -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    if entity.dp.y.abs() > entity.dp.x.abs() {
+        if entity.dp.y > 0.0 {
+            entity.facing_direction = 1;
+        } else {
+            entity.facing_direction = 3;
+        }
+    } else if entity.dp.x.abs() > entity.dp.y.abs() {
+        if entity.dp.x > 0.0 {
+            entity.facing_direction = 0;
+        } else {
+            entity.facing_direction = 2;
+        }
+    }
 }
 
 impl GameState {
@@ -419,22 +574,17 @@ impl GameState {
         GameState {
             world_arena,
             world,
+            camera_following_entity_index: None,
             camera_p: TileMapPosition {
                 abs_tile_x: 17 / 2,
                 abs_tile_y: 9 / 2,
                 abs_tile_z: 0,
                 offset: V2::zero(),
             },
-            player_p: TileMapPosition {
-                abs_tile_x: 1,
-                abs_tile_y: 3,
-                abs_tile_z: 0,
-                offset: V2::new(5.0, 5.0),
-            },
-            d_player_p: V2::zero(),
+            player_index_for_controller: [None; 5],
+            entities: EntityCollection::new(),
             backdrop,
             hero_bitmaps,
-            hero_facing_direction: 0,
         }
     }
 
@@ -446,123 +596,84 @@ impl GameState {
         let screen_center_x = offscreen_buffer.width as f32 / 2.0;
         let screen_center_y = offscreen_buffer.height as f32 / 2.0;
 
+        let entities = &mut self.entities;
+
+        {
+            for (controller_index, controller) in input.controllers.iter().enumerate() {
+                if let Some(controlling_entity) = self.player_index_for_controller[controller_index]
+                    .and_then(|index| entities.get_entity_mut(index))
+                {
+                    let mut dd_player_p = V2::zero();
+
+                    if controller.is_analog > 0 {
+                        dd_player_p =
+                            V2::new(controller.stick_average_x, controller.stick_average_y);
+                    } else {
+                        if controller.move_up.ended_down != 0 {
+                            dd_player_p.y = 1.0;
+                        }
+                        if controller.move_down.ended_down != 0 {
+                            dd_player_p.y = -1.0;
+                        }
+                        if controller.move_left.ended_down != 0 {
+                            dd_player_p.x = -1.0;
+                        }
+                        if controller.move_right.ended_down != 0 {
+                            dd_player_p.x = 1.0;
+                        }
+                        if dd_player_p.x != 0.0 && dd_player_p.y != 0.0 {
+                            dd_player_p *= core::f32::consts::FRAC_1_SQRT_2;
+                        }
+                    }
+
+                    move_player(
+                        &self.world.tile_map,
+                        controlling_entity,
+                        input.dt,
+                        dd_player_p,
+                    );
+                } else {
+                    if controller.start.ended_down > 0 {
+                        let entity_index = entities.add_entity();
+                        self.player_index_for_controller[controller_index] = Some(entity_index);
+                        let entity = entities.get_entity_mut(entity_index).unwrap();
+                        initialize_player(
+                            entity,
+                            entity_index,
+                            &mut self.camera_following_entity_index,
+                        );
+                    }
+                }
+            }
+        }
+
         let ref tile_map = self.world.tile_map;
 
         let tile_side_in_pixels = 60.0;
         let meters_to_pixels = tile_side_in_pixels / tile_map.tile_side_in_meters;
 
-        let player_height = 1.4;
-        let player_width = 0.75 * player_height;
+        if let Some(entity) = self
+            .camera_following_entity_index
+            .and_then(|index| entities.get_entity(index).cloned())
+        {
+            self.camera_p.abs_tile_z = entity.p.abs_tile_z;
 
-        let old_player_p = self.player_p;
-
-        for controller in input.controllers.iter() {
-            if controller.is_analog == 0 {
-                let mut dd_player_p = V2::zero();
-                if controller.move_up.ended_down != 0 {
-                    self.hero_facing_direction = 1;
-                    dd_player_p.y = 1.0;
-                }
-                if controller.move_down.ended_down != 0 {
-                    self.hero_facing_direction = 3;
-                    dd_player_p.y = -1.0;
-                }
-                if controller.move_left.ended_down != 0 {
-                    self.hero_facing_direction = 2;
-                    dd_player_p.x = -1.0;
-                }
-                if controller.move_right.ended_down != 0 {
-                    self.hero_facing_direction = 0;
-                    dd_player_p.x = 1.0;
-                }
-                if dd_player_p.x != 0.0 && dd_player_p.y != 0.0 {
-                    dd_player_p *= core::f32::consts::FRAC_1_SQRT_2;
-                }
-
-                let mut player_speed = 10.0;
-                if controller.action_up.ended_down != 0 {
-                    player_speed = 50.0;
-                }
-                dd_player_p *= player_speed;
-
-                // TODO: ODE
-                dd_player_p += -1.5 * self.d_player_p;
-
-                let mut new_player_p = self.player_p;
-                new_player_p.offset +=
-                    0.5 * dd_player_p * input.dt.powi(2) + self.d_player_p * input.dt;
-                self.d_player_p += dd_player_p * input.dt;
-                new_player_p = tile_map.recanonicalize_position(new_player_p);
-
-                let mut player_left = new_player_p;
-                player_left.offset.x -= 0.5 * player_width;
-                player_left = tile_map.recanonicalize_position(player_left);
-
-                let mut player_right = new_player_p;
-                player_right.offset.x += 0.5 * player_width;
-                player_right = tile_map.recanonicalize_position(player_right);
-
-                let mut col_p = None;
-                if !tile_map.is_point_empty(player_left) {
-                    col_p = Some(player_left);
-                }
-                if !tile_map.is_point_empty(player_right) {
-                    col_p = Some(player_right);
-                }
-                if !tile_map.is_point_empty(new_player_p) {
-                    col_p = Some(new_player_p);
-                }
-
-                if let Some(col_p) = col_p {
-                    let r = if self.player_p.abs_tile_x > col_p.abs_tile_x {
-                        V2::new(1.0, 0.0)
-                    } else if self.player_p.abs_tile_x < col_p.abs_tile_x {
-                        V2::new(-1.0, 0.0)
-                    } else if self.player_p.abs_tile_y > col_p.abs_tile_y {
-                        V2::new(0.0, 1.0)
-                    } else {
-                        V2::new(0.0, -1.0)
-                    };
-                    self.d_player_p = self.d_player_p - 1.0 * self.d_player_p * r * r;
-                } else {
-                    self.player_p = new_player_p;
-                }
+            let diff = tile_map.subtract(entity.p, self.camera_p);
+            if diff.dxy.x > 9.0 * tile_map.tile_side_in_meters {
+                self.camera_p.abs_tile_x += 17;
+            } else if diff.dxy.x < -9.0 * tile_map.tile_side_in_meters {
+                self.camera_p.abs_tile_x -= 17;
             }
-        }
-
-        // Update Camera/Player Z based on last movement
-        if !self.player_p.is_on_same_tile(&old_player_p) {
-            match tile_map.get_tile_value(
-                self.player_p.abs_tile_x,
-                self.player_p.abs_tile_y,
-                self.player_p.abs_tile_z,
-            ) {
-                Some(3) => {
-                    self.player_p.abs_tile_z += 1;
-                }
-                Some(4) => {
-                    self.player_p.abs_tile_z -= 1;
-                }
-                _ => {}
+            if diff.dxy.y > 5.0 * tile_map.tile_side_in_meters {
+                self.camera_p.abs_tile_y += 9;
+            } else if diff.dxy.y < -5.0 * tile_map.tile_side_in_meters {
+                self.camera_p.abs_tile_y -= 9;
             }
-        }
-
-        self.camera_p.abs_tile_z = self.player_p.abs_tile_z;
-        let diff = tile_map.subtract(self.player_p, self.camera_p);
-        if diff.dxy.x > 9.0 * tile_map.tile_side_in_meters {
-            self.camera_p.abs_tile_x += 17;
-        } else if diff.dxy.x < -9.0 * tile_map.tile_side_in_meters {
-            self.camera_p.abs_tile_x -= 17;
-        }
-        if diff.dxy.y > 5.0 * tile_map.tile_side_in_meters {
-            self.camera_p.abs_tile_y += 9;
-        } else if diff.dxy.y < -5.0 * tile_map.tile_side_in_meters {
-            self.camera_p.abs_tile_y -= 9;
         }
 
         let mut render_buffer: RenderBuffer = offscreen_buffer.into();
-        let screen_width = render_buffer.width;
-        let screen_height = render_buffer.height;
+        // let screen_width = render_buffer.width;
+        // let screen_height = render_buffer.height;
 
         draw_bitmap(&mut render_buffer, &self.backdrop, 0.0, 0.0);
         // draw_rectangle(
@@ -610,45 +721,47 @@ impl GameState {
             }
         }
 
-        let diff = tile_map.subtract(self.player_p, self.camera_p);
+        for entity in entities.iter() {
+            let diff = tile_map.subtract(entity.p, self.camera_p);
 
-        let player_r = 1.0;
-        let player_g = 1.0;
-        let player_b = 0.0;
-        let player_ground_point_x = screen_center_x + meters_to_pixels * diff.dxy.x;
-        let player_ground_point_y = screen_center_y - meters_to_pixels * diff.dxy.y;
-        let player_width_height = V2::new(player_width, player_height);
-        let player_left_top = V2::new(
-            player_ground_point_x - 0.5 * meters_to_pixels * player_width,
-            player_ground_point_y - meters_to_pixels * player_height,
-        );
-        draw_rectangle(
-            &mut render_buffer,
-            player_left_top,
-            player_left_top + meters_to_pixels * player_width_height,
-            player_r,
-            player_g,
-            player_b,
-        );
-        let hero_bitmaps = &self.hero_bitmaps[self.hero_facing_direction];
-        draw_bitmap(
-            &mut render_buffer,
-            &hero_bitmaps.torso,
-            player_ground_point_x - hero_bitmaps.align_x as f32,
-            player_ground_point_y - hero_bitmaps.align_y as f32,
-        );
-        draw_bitmap(
-            &mut render_buffer,
-            &hero_bitmaps.cape,
-            player_ground_point_x - hero_bitmaps.align_x as f32,
-            player_ground_point_y - hero_bitmaps.align_y as f32,
-        );
-        draw_bitmap(
-            &mut render_buffer,
-            &hero_bitmaps.head,
-            player_ground_point_x - hero_bitmaps.align_x as f32,
-            player_ground_point_y - hero_bitmaps.align_y as f32,
-        );
+            let player_r = 1.0;
+            let player_g = 1.0;
+            let player_b = 0.0;
+            let player_ground_point_x = screen_center_x + meters_to_pixels * diff.dxy.x;
+            let player_ground_point_y = screen_center_y - meters_to_pixels * diff.dxy.y;
+            let player_width_height = V2::new(entity.width, entity.height);
+            let player_left_top = V2::new(
+                player_ground_point_x - 0.5 * meters_to_pixels * entity.width,
+                player_ground_point_y - meters_to_pixels * entity.height,
+            );
+            draw_rectangle(
+                &mut render_buffer,
+                player_left_top,
+                player_left_top + meters_to_pixels * player_width_height,
+                player_r,
+                player_g,
+                player_b,
+            );
+            let hero_bitmaps = &self.hero_bitmaps[entity.facing_direction];
+            draw_bitmap(
+                &mut render_buffer,
+                &hero_bitmaps.torso,
+                player_ground_point_x - hero_bitmaps.align_x as f32,
+                player_ground_point_y - hero_bitmaps.align_y as f32,
+            );
+            draw_bitmap(
+                &mut render_buffer,
+                &hero_bitmaps.cape,
+                player_ground_point_x - hero_bitmaps.align_x as f32,
+                player_ground_point_y - hero_bitmaps.align_y as f32,
+            );
+            draw_bitmap(
+                &mut render_buffer,
+                &hero_bitmaps.head,
+                player_ground_point_x - hero_bitmaps.align_x as f32,
+                player_ground_point_y - hero_bitmaps.align_y as f32,
+            );
+        }
     }
 
     pub fn get_sound_samples(&mut self, sound_buffer: &mut GameSoundBuffer) {

@@ -4,7 +4,7 @@ use base::math::V2;
 
 use game::{ArenaArray, MemoryArena};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct TileMapPosition {
     pub abs_tile_x: u32,
     pub abs_tile_y: u32,

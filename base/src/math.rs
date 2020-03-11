@@ -1,6 +1,6 @@
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct V2 {
     pub x: f32,
     pub y: f32,

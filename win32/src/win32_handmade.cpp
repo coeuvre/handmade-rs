@@ -595,9 +595,9 @@ static void win32_process_pending_messages(GameControllerInput *keyboard_control
                     } else if (vk_code == VK_RIGHT) {
                         win32_process_keyboard_message(&keyboard_controller->action_right, is_down);
                     } else if (vk_code == VK_ESCAPE) {
-                        win32_process_keyboard_message(&keyboard_controller->start, is_down);
-                    } else if (vk_code == VK_SPACE) {
                         win32_process_keyboard_message(&keyboard_controller->back, is_down);
+                    } else if (vk_code == VK_SPACE) {
+                        win32_process_keyboard_message(&keyboard_controller->start, is_down);
                     }
 #if HANDMADE_INTERNAL
                     else if (vk_code == 'P') {
