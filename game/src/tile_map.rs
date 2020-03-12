@@ -13,6 +13,15 @@ pub struct TileMapPosition {
 }
 
 impl TileMapPosition {
+    pub fn centered(abs_tile_x: u32, abs_tile_y: u32, abs_tile_z: u32) -> TileMapPosition {
+        TileMapPosition {
+            abs_tile_x,
+            abs_tile_y,
+            abs_tile_z,
+            offset: V2::zero(),
+        }
+    }
+
     pub fn is_on_same_tile(&self, other: &TileMapPosition) -> bool {
         self.abs_tile_x == other.abs_tile_x
             && self.abs_tile_y == other.abs_tile_y

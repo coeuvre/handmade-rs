@@ -16,7 +16,7 @@ impl V2 {
     }
 
     pub fn len_sq(&self) -> f32 {
-        self * self
+        *self * *self
     }
 }
 

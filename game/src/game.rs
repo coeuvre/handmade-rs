@@ -297,7 +297,29 @@ pub fn initialize_player(
     }
 }
 
-pub fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
+fn test_wall(
+    wall_x: f32,
+    rel_x: f32,
+    rel_y: f32,
+    delta_x: f32,
+    delta_y: f32,
+    t_min: &mut f32,
+    min_y: f32,
+    max_y: f32,
+) {
+    let epsilon = 0.0001;
+    if delta_x != 0.0 {
+        let t = (wall_x - rel_x) / delta_x;
+        let y = rel_y + t * delta_y;
+        if t >= 0.0 && t < *t_min {
+            if y >= min_y && y <= max_y {
+                *t_min = (t - epsilon).max(0.0);
+            }
+        }
+    }
+}
+
+fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
     let ddp_len_sq = ddp.len_sq();
     if ddp_len_sq > 1.0 {
         ddp *= 1.0 / ddp_len_sq.sqrt();
@@ -311,11 +333,13 @@ pub fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2
     ddp += -8.0 * entity.dp;
 
     let old_player_p = entity.p;
-    let mut new_player_p = entity.p;
-    new_player_p.offset += 0.5 * ddp * dt.powi(2) + entity.dp * dt;
+    let player_delta = 0.5 * ddp * dt.powi(2) + entity.dp * dt;
     entity.dp += ddp * dt;
+    let mut new_player_p = entity.p;
+    new_player_p.offset += player_delta;
     new_player_p = tile_map.recanonicalize_position(new_player_p);
 
+    /*
     let mut player_left = new_player_p;
     player_left.offset.x -= 0.5 * entity.width;
     player_left = tile_map.recanonicalize_position(player_left);
@@ -349,6 +373,73 @@ pub fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2
     } else {
         entity.p = new_player_p;
     }
+    */
+
+    let min_tile_x = old_player_p.abs_tile_x.min(new_player_p.abs_tile_x);
+    let min_tile_y = old_player_p.abs_tile_y.min(new_player_p.abs_tile_y);
+    let one_past_max_tile_x = old_player_p.abs_tile_x.max(new_player_p.abs_tile_x) + 1;
+    let one_past_max_tile_y = old_player_p.abs_tile_y.max(new_player_p.abs_tile_y) + 1;
+
+    let mut t_min = 1.0;
+    let abs_tile_z = old_player_p.abs_tile_z;
+    // TODO: wrapping?
+    for abs_tile_y in min_tile_y..one_past_max_tile_y {
+        for abs_tile_x in min_tile_x..one_past_max_tile_x {
+            let test_tile_p = TileMapPosition::centered(abs_tile_x, abs_tile_y, abs_tile_z);
+            if !tile_map.is_point_empty(test_tile_p) {
+                let min_corner =
+                    -0.5 * V2::new(tile_map.tile_side_in_meters, tile_map.tile_side_in_meters);
+                let max_corner =
+                    0.5 * V2::new(tile_map.tile_side_in_meters, tile_map.tile_side_in_meters);
+                let rel = tile_map.subtract(old_player_p, test_tile_p).dxy;
+
+                test_wall(
+                    min_corner.x,
+                    rel.x,
+                    rel.y,
+                    player_delta.x,
+                    player_delta.y,
+                    &mut t_min,
+                    min_corner.y,
+                    max_corner.y,
+                );
+                test_wall(
+                    max_corner.x,
+                    rel.x,
+                    rel.y,
+                    player_delta.x,
+                    player_delta.y,
+                    &mut t_min,
+                    min_corner.y,
+                    max_corner.y,
+                );
+                test_wall(
+                    min_corner.y,
+                    rel.y,
+                    rel.x,
+                    player_delta.y,
+                    player_delta.x,
+                    &mut t_min,
+                    min_corner.x,
+                    max_corner.x,
+                );
+                test_wall(
+                    max_corner.y,
+                    rel.y,
+                    rel.x,
+                    player_delta.y,
+                    player_delta.x,
+                    &mut t_min,
+                    min_corner.x,
+                    max_corner.x,
+                );
+            }
+        }
+    }
+    new_player_p = old_player_p;
+    new_player_p.offset += t_min * player_delta;
+    new_player_p = tile_map.recanonicalize_position(new_player_p);
+    entity.p = new_player_p;
 
     if !entity.p.is_on_same_tile(&old_player_p) {
         match tile_map.get_tile_value(
