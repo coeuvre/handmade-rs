@@ -289,8 +289,8 @@ pub fn initialize_player(
         offset: V2::new(0.0, 0.0),
     };
     entity.dp = V2::zero();
-    entity.height = 1.4;
-    entity.width = 0.75 * entity.height;
+    entity.height = 0.5;
+    entity.width = 1.0;
 
     if camera_following_entity_index.is_none() {
         *camera_following_entity_index = Some(entity_index);
@@ -306,7 +306,8 @@ fn test_wall(
     t_min: &mut f32,
     min_y: f32,
     max_y: f32,
-) {
+) -> bool {
+    let mut hit = false;
     let epsilon = 0.0001;
     if delta_x != 0.0 {
         let t = (wall_x - rel_x) / delta_x;
@@ -314,9 +315,11 @@ fn test_wall(
         if t >= 0.0 && t < *t_min {
             if y >= min_y && y <= max_y {
                 *t_min = (t - epsilon).max(0.0);
+                hit = true;
             }
         }
     }
+    return hit;
 }
 
 fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
@@ -333,133 +336,103 @@ fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
     ddp += -8.0 * entity.dp;
 
     let old_player_p = entity.p;
-    let player_delta = 0.5 * ddp * dt.powi(2) + entity.dp * dt;
+    let mut player_delta = 0.5 * ddp * dt.powi(2) + entity.dp * dt;
     entity.dp += ddp * dt;
     let new_player_p = tile_map.offset(entity.p, player_delta);
 
-    /*
-    let mut player_left = new_player_p;
-    player_left.offset.x -= 0.5 * entity.width;
-    player_left = tile_map.recanonicalize_position(player_left);
+    let mut min_tile_x = entity.p.abs_tile_x.min(new_player_p.abs_tile_x);
+    let mut min_tile_y = entity.p.abs_tile_y.min(new_player_p.abs_tile_y);
+    let mut max_tile_x = entity.p.abs_tile_x.max(new_player_p.abs_tile_x);
+    let mut max_tile_y = entity.p.abs_tile_y.max(new_player_p.abs_tile_y);
 
-    let mut player_right = new_player_p;
-    player_right.offset.x += 0.5 * entity.width;
-    player_right = tile_map.recanonicalize_position(player_right);
+    let entity_tile_width = (entity.width / tile_map.tile_side_in_meters).ceil() as u32;
+    let entity_tile_height = (entity.height / tile_map.tile_side_in_meters).ceil() as u32;
 
-    let mut col_p = None;
-    if !tile_map.is_point_empty(player_left) {
-        col_p = Some(player_left);
-    }
-    if !tile_map.is_point_empty(player_right) {
-        col_p = Some(player_right);
-    }
-    if !tile_map.is_point_empty(new_player_p) {
-        col_p = Some(new_player_p);
-    }
+    min_tile_x -= entity_tile_width;
+    max_tile_x += entity_tile_width;
+    min_tile_y -= entity_tile_height;
+    max_tile_y += entity_tile_height;
 
-    if let Some(col_p) = col_p {
-        let r = if entity.p.abs_tile_x > col_p.abs_tile_x {
-            V2::new(1.0, 0.0)
-        } else if entity.p.abs_tile_x < col_p.abs_tile_x {
-            V2::new(-1.0, 0.0)
-        } else if entity.p.abs_tile_y > col_p.abs_tile_y {
-            V2::new(0.0, 1.0)
-        } else {
-            V2::new(0.0, -1.0)
-        };
-        entity.dp = entity.dp - 1.0 * entity.dp * r * r;
-    } else {
-        entity.p = new_player_p;
-    }
-    */
+    assert!(max_tile_x - min_tile_x < 32);
+    assert!(max_tile_y - min_tile_y < 32);
 
-    let start_tile_x = old_player_p.abs_tile_x as i32;
-    let start_tile_y = old_player_p.abs_tile_y as i32;
-    let end_tile_x = new_player_p.abs_tile_x as i32;
-    let end_tile_y = new_player_p.abs_tile_y as i32;
-    let delta_x = if (end_tile_x - start_tile_x) >= 0 {
-        1
-    } else {
-        -1
-    };
-    let delta_y = if (end_tile_y - start_tile_y) >= 0 {
-        1
-    } else {
-        -1
-    };
-
-    let mut t_min = 1.0;
-    let abs_tile_z = old_player_p.abs_tile_z;
-    let mut abs_tile_y = start_tile_y;
-    loop {
-        let mut abs_tile_x = start_tile_x;
-        loop {
-            let test_tile_p =
-                TileMapPosition::centered(abs_tile_x as u32, abs_tile_y as u32, abs_tile_z);
-            if !tile_map.is_point_empty(test_tile_p) {
-                let min_corner =
-                    -0.5 * V2::new(tile_map.tile_side_in_meters, tile_map.tile_side_in_meters);
-                let max_corner =
-                    0.5 * V2::new(tile_map.tile_side_in_meters, tile_map.tile_side_in_meters);
-                let rel = tile_map.subtract(old_player_p, test_tile_p).dxy;
-
-                test_wall(
-                    min_corner.x,
-                    rel.x,
-                    rel.y,
-                    player_delta.x,
-                    player_delta.y,
-                    &mut t_min,
-                    min_corner.y,
-                    max_corner.y,
-                );
-                test_wall(
-                    max_corner.x,
-                    rel.x,
-                    rel.y,
-                    player_delta.x,
-                    player_delta.y,
-                    &mut t_min,
-                    min_corner.y,
-                    max_corner.y,
-                );
-                test_wall(
-                    min_corner.y,
-                    rel.y,
-                    rel.x,
-                    player_delta.y,
-                    player_delta.x,
-                    &mut t_min,
-                    min_corner.x,
-                    max_corner.x,
-                );
-                test_wall(
-                    max_corner.y,
-                    rel.y,
-                    rel.x,
-                    player_delta.y,
-                    player_delta.x,
-                    &mut t_min,
-                    min_corner.x,
-                    max_corner.x,
-                );
-            }
-
-            if abs_tile_x == end_tile_x {
-                break;
-            } else {
-                abs_tile_x += delta_x;
-            }
-        }
-
-        if abs_tile_y == end_tile_y {
+    let mut t_remaining = 1.0;
+    let abs_tile_z = entity.p.abs_tile_z;
+    for _ in 0..4 {
+        if t_remaining <= 0.0 {
             break;
-        } else {
-            abs_tile_y += delta_y;
         }
-    }
+        let mut t_min = 1.0;
+        let mut wall_normal = V2::zero();
+        for abs_tile_y in min_tile_y..=max_tile_y {
+            for abs_tile_x in min_tile_x..=max_tile_x {
+                let test_tile_p =
+                    TileMapPosition::centered(abs_tile_x as u32, abs_tile_y as u32, abs_tile_z);
+                if !tile_map.is_point_empty(test_tile_p) {
+                    let diameter_w = tile_map.tile_side_in_meters + entity.width;
+                    let diameter_h = tile_map.tile_side_in_meters + entity.height;
+                    let min_corner = -0.5 * V2::new(diameter_w, diameter_h);
+                    let max_corner = 0.5 * V2::new(diameter_w, diameter_h);
+                    let rel = tile_map.subtract(entity.p, test_tile_p).dxy;
 
-    entity.p = tile_map.offset(old_player_p, t_min * player_delta);
+                    if test_wall(
+                        min_corner.x,
+                        rel.x,
+                        rel.y,
+                        player_delta.x,
+                        player_delta.y,
+                        &mut t_min,
+                        min_corner.y,
+                        max_corner.y,
+                    ) {
+                        wall_normal = V2::new(1.0, 0.0);
+                    }
+                    if test_wall(
+                        max_corner.x,
+                        rel.x,
+                        rel.y,
+                        player_delta.x,
+                        player_delta.y,
+                        &mut t_min,
+                        min_corner.y,
+                        max_corner.y,
+                    ) {
+                        wall_normal = V2::new(-1.0, 0.0);
+                    }
+                    if test_wall(
+                        min_corner.y,
+                        rel.y,
+                        rel.x,
+                        player_delta.y,
+                        player_delta.x,
+                        &mut t_min,
+                        min_corner.x,
+                        max_corner.x,
+                    ) {
+                        wall_normal = V2::new(0.0, 1.0);
+                    }
+                    if test_wall(
+                        max_corner.y,
+                        rel.y,
+                        rel.x,
+                        player_delta.y,
+                        player_delta.x,
+                        &mut t_min,
+                        min_corner.x,
+                        max_corner.x,
+                    ) {
+                        wall_normal = V2::new(0.0, -1.0);
+                    }
+                }
+            }
+        }
+
+        entity.p = tile_map.offset(entity.p, t_min * player_delta);
+        entity.dp = entity.dp - 1.0 * entity.dp * wall_normal * wall_normal;
+        player_delta = player_delta - 1.0 * player_delta * wall_normal * wall_normal;
+
+        t_remaining -= t_min * t_remaining;
+    }
 
     if !entity.p.is_on_same_tile(&old_player_p) {
         match tile_map.get_tile_value(
@@ -845,7 +818,7 @@ impl GameState {
             let player_width_height = V2::new(entity.width, entity.height);
             let player_left_top = V2::new(
                 player_ground_point_x - 0.5 * meters_to_pixels * entity.width,
-                player_ground_point_y - meters_to_pixels * entity.height,
+                player_ground_point_y - 0.5 * meters_to_pixels * entity.height,
             );
             draw_rectangle(
                 &mut render_buffer,
