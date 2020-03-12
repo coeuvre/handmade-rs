@@ -1,4 +1,4 @@
-use core::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut, RangeInclusive};
 use core::ptr::null_mut;
 
 use base::math::V2;
@@ -286,7 +286,7 @@ pub fn initialize_player(
         abs_tile_x: 1,
         abs_tile_y: 3,
         abs_tile_z: 0,
-        offset: V2::new(5.0, 5.0),
+        offset: V2::new(0.0, 0.0),
     };
     entity.dp = V2::zero();
     entity.height = 1.4;
@@ -335,9 +335,7 @@ fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
     let old_player_p = entity.p;
     let player_delta = 0.5 * ddp * dt.powi(2) + entity.dp * dt;
     entity.dp += ddp * dt;
-    let mut new_player_p = entity.p;
-    new_player_p.offset += player_delta;
-    new_player_p = tile_map.recanonicalize_position(new_player_p);
+    let new_player_p = tile_map.offset(entity.p, player_delta);
 
     /*
     let mut player_left = new_player_p;
@@ -375,17 +373,29 @@ fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
     }
     */
 
-    let min_tile_x = old_player_p.abs_tile_x.min(new_player_p.abs_tile_x);
-    let min_tile_y = old_player_p.abs_tile_y.min(new_player_p.abs_tile_y);
-    let one_past_max_tile_x = old_player_p.abs_tile_x.max(new_player_p.abs_tile_x) + 1;
-    let one_past_max_tile_y = old_player_p.abs_tile_y.max(new_player_p.abs_tile_y) + 1;
+    let start_tile_x = old_player_p.abs_tile_x as i32;
+    let start_tile_y = old_player_p.abs_tile_y as i32;
+    let end_tile_x = new_player_p.abs_tile_x as i32;
+    let end_tile_y = new_player_p.abs_tile_y as i32;
+    let delta_x = if (end_tile_x - start_tile_x) >= 0 {
+        1
+    } else {
+        -1
+    };
+    let delta_y = if (end_tile_y - start_tile_y) >= 0 {
+        1
+    } else {
+        -1
+    };
 
     let mut t_min = 1.0;
     let abs_tile_z = old_player_p.abs_tile_z;
-    // TODO: wrapping?
-    for abs_tile_y in min_tile_y..one_past_max_tile_y {
-        for abs_tile_x in min_tile_x..one_past_max_tile_x {
-            let test_tile_p = TileMapPosition::centered(abs_tile_x, abs_tile_y, abs_tile_z);
+    let mut abs_tile_y = start_tile_y;
+    loop {
+        let mut abs_tile_x = start_tile_x;
+        loop {
+            let test_tile_p =
+                TileMapPosition::centered(abs_tile_x as u32, abs_tile_y as u32, abs_tile_z);
             if !tile_map.is_point_empty(test_tile_p) {
                 let min_corner =
                     -0.5 * V2::new(tile_map.tile_side_in_meters, tile_map.tile_side_in_meters);
@@ -434,12 +444,22 @@ fn move_player(tile_map: &TileMap, entity: &mut Entity, dt: f32, mut ddp: V2) {
                     max_corner.x,
                 );
             }
+
+            if abs_tile_x == end_tile_x {
+                break;
+            } else {
+                abs_tile_x += delta_x;
+            }
+        }
+
+        if abs_tile_y == end_tile_y {
+            break;
+        } else {
+            abs_tile_y += delta_y;
         }
     }
-    new_player_p = old_player_p;
-    new_player_p.offset += t_min * player_delta;
-    new_player_p = tile_map.recanonicalize_position(new_player_p);
-    entity.p = new_player_p;
+
+    entity.p = tile_map.offset(old_player_p, t_min * player_delta);
 
     if !entity.p.is_on_same_tile(&old_player_p) {
         match tile_map.get_tile_value(

@@ -176,6 +176,11 @@ impl TileMap {
             dz: self.tile_side_in_meters * d_tile_z,
         }
     }
+
+    pub fn offset(&self, mut p: TileMapPosition, offset: V2) -> TileMapPosition {
+        p.offset += offset;
+        self.recanonicalize_position(p)
+    }
 }
 
 pub struct TileChunk {
